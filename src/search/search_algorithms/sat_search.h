@@ -32,7 +32,7 @@ protected:
 	virtual SearchStatus step() override;
 
 public:
-    explicit SATSearch(int _stepTimeLimit, bool _continueAfterFirstPlan, std::shared_ptr<LengthStrategy> _length_strategy, std::shared_ptr<SATEncodingFactory> _encoding_factory, bool _kissat_quietMode,int bound, double max_time, const std::string &description,  utils::Verbosity verbosity);
+    explicit SATSearch(int _stepTimeLimit, bool _continueAfterFirstPlan, std::shared_ptr<LengthStrategy> _length_strategy, std::shared_ptr<SATEncodingFactory> _encoding_factory, bool _kissat_quietMode,OperatorCost cost_type, int bound, double max_time, const std::string &description,  utils::Verbosity verbosity);
     virtual ~SATSearch() = default;
 
     virtual void print_statistics() const override;

@@ -43,7 +43,7 @@ report_bitwidth()
 set_up_build_types("Debug;Release")
 set_up_options()
 
-if (SAT_DIR)
+if (USE_SAT)
 	message("Compiling with SAT solver support")
 	message("Link dir: ${SAT_DIR}")
 	link_directories(${SAT_DIR})
@@ -616,49 +616,54 @@ create_fast_downward_library(
     DEPENDENCY_ONLY
 )
 
-if (SAT_DIR)
-	if (USE_KISSAT)
-        message("Build against kissat")
-		target_link_libraries(sat_solver INTERFACE kissat)
-        target_sources(sat_solver INTERFACE sat/kissat.cc sat/kissat.h sat/no_branching_heuristic.cc)
-	endif()
-	if (USE_KISSATP)
-        message("Build against modified kissat")
-		target_link_libraries(sat_solver INTERFACE kissat)
-        target_sources(sat_solver INTERFACE sat/kissat.cc sat/kissat.h sat/branching_heuristic.cc)
-	endif()
 
-	if (USE_CMS)
-		message("Build against cryptominisat solver")
-		target_link_libraries(downward INTERFACE ipasircryptominisat5)
-		target_link_libraries(downward INTERFACE gmp)
-		target_link_libraries(downward INTERFACE cadiback)
-		target_link_libraries(downward INTERFACE cadical)
-        target_sources(sat_solver INTERFACE sat/no_branching_heuristic.cc)
-	endif()
-	if ((NOT USE_CMS) AND (NOT USE_KISSAT) AND (NOT USE_KISSATP))
-		message("Build against regular ipasir solver")
-		target_link_libraries(downward INTERFACE ipasir)
-        target_sources(sat_solver INTERFACE sat/no_branching_heuristic.cc)
-	endif()
+if (USE_SAT)
+        if (USE_KISSAT)
+                message("Build against kissat")
+				target_sources(sat_solver INTERFACE sat/kissat.h sat/kissat.cc)
+				target_link_libraries(sat_solver INTERFACE ${SAT_LIB})
+        else (USE_KISSAT)
+				message("Build against regular ipasir solver, named ${SAT_LIB}")
+				target_sources(sat_solver PRIVATE sat/kissat_dummy_terminate.cc) ## only kissat has this function
+				if (${SAT_LIB} MATCHES "^.*cryptominisat.*$")
+					message("Building against CMS assing cadiback and cadical")
+					target_link_libraries(downward INTERFACE gmp)
+					target_link_libraries(downward INTERFACE cadiback)
+					target_link_libraries(downward INTERFACE cadical)
+				endif ()
+				target_link_libraries(downward INTERFACE ${SAT_LIB})
+        endif()
+		if (USE_CUSTOM_KISSAT)
+			message("Do not add dummy implementation of missing custom kissat function")
+			## nothing to do
+		else (USE_CUSTOM_KISSAT)
+			## we need to provide dummy implementations of the custom functions so that downward compiles
+			message("Add dummy implementation of missing custom kissat function")
+			target_sources(sat_solver INTERFACE sat/kissat_dummy.cc)
+		endif ()
+		## for kissat that supports custom branching heuristics
+		target_sources(sat_solver INTERFACE sat/no_branching_heuristic.cc)
 endif()
+
 
 create_fast_downward_library(
     NAME sat_search
 	HELP "SAT search"
     SOURCES
-        sat/sat_search
+		sat/length_strategy
+		search_algorithms/sat_search
+		#        sat/sat_search
         sat/sat_encoder
     DEPENDS
 		sat_solver
-    DEPENDENCY_ONLY
+		DEPENDENCY_ONLY
 )
 
 create_fast_downward_library(
     NAME plugin_sat
 	HELP "SAT search"
     SOURCES
-        sat/plugin_sat
+		search_algorithms/plugin_sat
     DEPENDS
         sat_search
         search_common
