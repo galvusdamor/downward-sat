@@ -34,4 +34,16 @@ option USE_LP to false."
     # This option should not show up in CMake GUIs like ccmake where all
     # libraries are enabled or disabled manually.
     mark_as_advanced(DISABLE_LIBRARIES_BY_DEFAULT)
+
+
+	option(USE_KISSAT "Compile with the kissat SAT solver")
+	option(USE_CUSTOM_KISSAT "Compile with custom modifications to the kissat SAT solver")
+	message("OPTION K: ${USE_KISSAT}")
+	message("OPTION C: ${USE_CUSTOM_KISSAT}")
+	message("Link SAT dir: ${SAT_DIR}")
+	message("Link SAT lib: ${SAT_LIB}")
+	link_directories(${SAT_DIR})
+	option(USE_SAT "Compile with support for SAT solvers. Building is only possible against a single SAT solver" TRUE)
+
+
 endfunction()

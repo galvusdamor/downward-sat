@@ -130,22 +130,22 @@ def main():
             config_names.append(arg)
         elif arg.startswith("-s"):
             configure_parameters.append("-DSAT_DIR="+arg[2:])
+        elif arg.startswith("-l"):
+            configure_parameters.append("-DSAT_LIB="+arg[2:])
         elif arg == "--kissat":
+            configure_parameters.append("-DUSE_SAT=ON")
             configure_parameters.append("-DUSE_KISSAT=ON")
-            configure_parameters.append("-DUSE_KISSATP=OFF")
-            configure_parameters.append("-DUSE_CMS=OFF")
-        elif arg == "--kissatp":
-            configure_parameters.append("-DUSE_KISSAT=OFF")
-            configure_parameters.append("-DUSE_KISSATP=ON")
-            configure_parameters.append("-DUSE_CMS=OFF")
-        elif arg == "--cryptominisat":
-            configure_parameters.append("-DUSE_KISSAT=OFF")
-            configure_parameters.append("-DUSE_KISSATP=OFF")
-            configure_parameters.append("-DUSE_CMS=ON")
+            configure_parameters.append("-DUSE_CUSTOM_KISSAT=OFF")
+            configure_parameters.append("-DSAT_LIB=kissat")
+        elif arg == "--custom-kissat":
+            configure_parameters.append("-DUSE_SAT=ON")
+            configure_parameters.append("-DUSE_KISSAT=ON")
+            configure_parameters.append("-DUSE_CUSTOM_KISSAT=ON")
+            configure_parameters.append("-DSAT_LIB=kissat")
         elif arg == "--ipasir":
+            configure_parameters.append("-DUSE_SAT=ON")
             configure_parameters.append("-DUSE_KISSAT=OFF")
-            configure_parameters.append("-DUSE_KISSATP=OFF")
-            configure_parameters.append("-DUSE_CMS=OFF")
+            configure_parameters.append("-DUSE_CUSTOM_KISSAT=OFF")
         else:
             build_parameters.append(arg)
     if not config_names:

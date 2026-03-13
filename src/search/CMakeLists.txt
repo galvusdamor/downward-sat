@@ -652,7 +652,7 @@ create_fast_downward_library(
     SOURCES
 		sat/length_strategy
 		search_algorithms/sat_search
-		#        sat/sat_search
+		sat/kautz_selman_rintanen
         sat/sat_encoder
     DEPENDS
 		sat_solver
