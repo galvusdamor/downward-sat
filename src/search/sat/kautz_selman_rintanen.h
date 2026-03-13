@@ -37,18 +37,64 @@ struct AxiomSCC{
 // abstract interface for initialisation of SAT encoding
 class KautzSelmanRintanenEncodingFactory : public SATEncodingFactory, std::enable_shared_from_this<KautzSelmanRintanenEncodingFactory> {
 public:
+	// TODO fill and use this map
+	std::map<int,std::map<int,int>> operator_precondition_map;	
 
+	// static knowledge about the problem:
+	// whether a derived predicate is statically true
+	std::unordered_set<int> statically_true_derived_predicates;
+
+
+	// axiom structure graph
+	std::vector<std::vector<int>> derived_implication;
+	std::vector<std::vector<int>> pos_derived_implication;
+	std::vector<std::vector<int>> neg_derived_implication;
+	std::map<FactPair, std::vector<int>> derived_entry_edges;
+	void axiom_dfs(int var, std::set<int> & posReachable, std::set<int> & negReachable, bool mode);
+
+	// axiom SCCs
+	std::vector<AxiomSCC> axiomSCCsInTopOrder;
+	std::map<int,int> numberOfAxiomLayerVariablesPerDerived;
+	std::vector<std::vector<OperatorProxy>> achievers_per_derived;
+
+	// exists step
+	std::vector<int> global_action_ordering;
+	// generate Erasing and Requiring list
+	// per fact, per SCC, gives a list of all E/R as a pair: <operator,position_in_scc>
+	std::map<FactPair,std::vector< std::vector<std::pair<int,int>>  >> erasingList;
+	std::map<FactPair,std::vector< std::vector<std::pair<int,int>>  >> requiringList;
+
+
+	std::pair<std::vector<FactPair>, std::vector<FactPair> > compute_needs_and_deletes_for_operator(int op);
+
+	// efficient access data structure, needed for testing whether two action have compatible preconditions and effect
+	// these are the tests can_be_executed_in_same_state and have_actions_unconflicting_effects
+	// static information about the planning problem.
+    std::vector<std::vector<FactPair>> sorted_op_preconditions;
+    std::vector<std::vector<FactPair>> sorted_op_effects;
+	void set_up_efficient_conflict_testing();
+	bool can_be_executed_in_same_state(int op1_no, int op2_no);
+	bool have_actions_unconflicting_effects(int op1_no, int op2_no);
+
+
+
+private:
 	int encoding;
 	int	disablingThreshold;
 	bool aboveThresholdGroupJoining;
     utils::LogProxy log;
 	std::shared_ptr<KautzSelmanRintanenEncodingFactory> me;
 
+	void set_up_axioms();
+	void set_up_exists_step();
+	void set_up_single_step();
+
+public:
 	KautzSelmanRintanenEncodingFactory(
 			int _encoding,
 			int	_disablingThreshold,
 			bool _aboveThresholdGroupJoining,
-			std::shared_ptr<sat_capsule> capsule, const TaskProxy _task_proxy, bool forceAtLeastOneAction,
+			const TaskProxy _task_proxy, bool forceAtLeastOneAction,
     		utils::LogProxy _log):
 		SATEncodingFactory(forceAtLeastOneAction,_task_proxy),
 		encoding(_encoding),
@@ -70,26 +116,9 @@ public:
 	bool logInference = false;
 	
 	// actual run configuration
-	int planLength;
-	int currentLength;
-	int lengthIteration;
-	int startLength;
-	double multiplier;
 	bool existsStep = true;
 	int disablingThreshold;
 	bool aboveThresholdGroupJoining;
-	bool useRintanensP;
-	bool disableVARElimination;
-
-	bool forceAtLeastOneAction;
-
-
-	// TODO fill and use this map
-	std::map<int,std::map<int,int>> operator_precondition_map;	
-
-	// static knowledge about the problem:
-	// whether a derived predicate is statically true
-	std::unordered_set<int> statically_true_derived_predicates;
 
 
 	// dynamic variables generated while creating the formula
@@ -113,66 +142,11 @@ public:
 	std::map<int,std::vector<std::vector<std::vector<int>>>> deleterVars;
 
 
-
-
-	//// variable -> value -> list of actions
-	//std::vector<std::vector<std::vector<int>>> achiever;
-	//std::vector<std::vector<std::vector<int>>> deleter;
-
-	// axiom structure graph
-	std::vector<std::vector<int>> derived_implication;
-	std::vector<std::vector<int>> pos_derived_implication;
-	std::vector<std::vector<int>> neg_derived_implication;
-	std::map<FactPair, std::vector<int>> derived_entry_edges;
-	void axiom_dfs(int var, std::set<int> & posReachable, std::set<int> & negReachable, bool mode);
-
-
-
-	// axiom SCCs
-	std::vector<AxiomSCC> axiomSCCsInTopOrder;
-	std::map<int,int> numberOfAxiomLayerVariablesPerDerived;
-	std::vector<std::vector<OperatorProxy>> achievers_per_derived;
-
 	void axiom_encoding_for_timestep(int time);
 	
 	void printVariableTruth();
 
 
-	bool try_to_satisfy(std::set<int> & activeAxtioms, std::set<FactPair> & currentState, FactPair goal);
-
-
-	void compute_necessary_effects(int op, FactPair assumedFact,
-		std::set<FactPair> & maintainedFacts,
-		std::set<FactPair> & potentialEffects,
-		std::set<FactPair> & definitiveEffects,
-			bool evaluateAxiomsAfter);
-
-	std::set<FactPair> evaluate_axioms_on_partial_state(std::set<FactPair> & definitiveEffects);
-	
-	void speculative_evaluate_axioms_on_partial_state(
-			std::set<FactPair> & maintainedFacts,
-			std::set<FactPair> & possibleEffects, std::set<FactPair> & definitiveEffects);
-
-
-	std::set<FactPair> compute_known_prior_state(int op, FactPair assumedFact);
-
-
-	// efficient access data structure, needed for testing whether two action have compatible preconditions and effect
-	// these are the tests can_be_executed_in_same_state and have_actions_unconflicting_effects
-	// static information about the planning problem.
-    std::vector<std::vector<FactPair>> sorted_op_preconditions;
-    std::vector<std::vector<FactPair>> sorted_op_effects;
-	void set_up_efficient_conflict_testing();
-	bool can_be_executed_in_same_state(int op1_no, int op2_no);
-	bool have_actions_unconflicting_effects(int op1_no, int op2_no);
-
-
-	// exists step
-	std::vector<int> global_action_ordering;
-	// generate Erasing and Requiring list
-	// per fact, per SCC, gives a list of all E/R as a pair: <operator,position_in_scc>
-	std::map<FactPair,std::vector< std::vector<std::pair<int,int>>  >> erasingList;
-	std::map<FactPair,std::vector< std::vector<std::pair<int,int>>  >> requiringList;
 
 	void exists_step_restriction(std::vector<int> & operator_variables, int time);
 	void generateChain(std::vector<int> & operator_variables,
@@ -183,12 +157,6 @@ public:
 	std::map<std::string,int> clauseCounter;
 	std::map<std::string,int> variableCounter;
 	
-	void set_up_axioms();
-	void set_up_exists_step();
-	void set_up_single_step();
-
-	std::pair<std::vector<FactPair>, std::vector<FactPair> > compute_needs_and_deletes_for_operator(int op);
-
 	
 	void generate_operator_variables(int time);
 	void generate_fact_variables(int time);

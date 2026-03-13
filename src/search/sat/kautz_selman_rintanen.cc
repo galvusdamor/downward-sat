@@ -27,7 +27,16 @@ namespace sat_search {
 
 	
 void KautzSelmanRintanenEncodingFactory::initialize() {
+	// set up data structures for derived predicates and axioms -- won't do anything if none of them exist.
+	set_up_axioms();
 
+	// prepare for parallelism encodings 
+	if (encoding == 0)
+		set_up_exists_step();
+	else
+		set_up_single_step();
+
+	assert(global_action_ordering.size() == task_proxy.get_operators().size());
 }
 	
 	
@@ -62,21 +71,6 @@ KautzSelmanRintanenEncoding::KautzSelmanRintanenEncoding(
 			exit(-1);
 	}
 
-	// XXX Move to factory
-	log << "conducting SAT search"
-		<< " for plan length: " << (planLength==-1?"all":to_string(planLength))
-        << endl;
-
-	// set up data structures for derived predicates and axioms -- won't do anything if none of them exist.
-	set_up_axioms();
-
-	// prepare for parallelism encodings 
-	if (existsStep)
-		set_up_exists_step();
-	else
-		set_up_single_step();
-
-	assert(global_action_ordering.size() == task_proxy.get_operators().size());
 }
 
 // TODO copied from pruning/stubborn_sets_action_centric.h
@@ -100,12 +94,12 @@ static bool contain_conflicting_fact(const vector<FactPair> &facts1,
     return false;
 }
 
-bool KautzSelmanRintanenEncoding::can_be_executed_in_same_state(int op1_no, int op2_no){
+bool KautzSelmanRintanenEncodingFactory::can_be_executed_in_same_state(int op1_no, int op2_no){
     return !contain_conflicting_fact(sorted_op_preconditions[op1_no],
                                     			   sorted_op_preconditions[op2_no]);
 }
 
-bool KautzSelmanRintanenEncoding::have_actions_unconflicting_effects(int op1_no, int op2_no){
+bool KautzSelmanRintanenEncodingFactory::have_actions_unconflicting_effects(int op1_no, int op2_no){
     return !contain_conflicting_fact(sorted_op_effects[op1_no],
                                     			   sorted_op_effects[op2_no]);
 }
@@ -113,7 +107,7 @@ bool KautzSelmanRintanenEncoding::have_actions_unconflicting_effects(int op1_no,
 
 // mode = true: causing fact has become *true*
 // mode = false: causing fact has become *false*
-void KautzSelmanRintanenEncoding::axiom_dfs(int var, set<int> & posReachable, set<int> & negReachable, bool mode){
+void KautzSelmanRintanenEncodingFactory::axiom_dfs(int var, set<int> & posReachable, set<int> & negReachable, bool mode){
 	if (mode){
 		// causing fact has become true, this means the DP could turn true
 		if (posReachable.count(var)) return;
@@ -142,7 +136,7 @@ void KautzSelmanRintanenEncoding::axiom_dfs(int var, set<int> & posReachable, se
 	}
 }
 
-void KautzSelmanRintanenEncoding::set_up_axioms(){
+void KautzSelmanRintanenEncodingFactory::set_up_axioms(){
 	derived_implication.clear();
 	derived_implication.resize(task_proxy.get_variables().size());
 	pos_derived_implication.clear();
@@ -674,7 +668,7 @@ void KautzSelmanRintanenEncoding::set_up_axioms(){
 	DEBUG(log << "Axiom SCC number calculated" << endl);
 }
 
-void KautzSelmanRintanenEncoding::set_up_single_step() {
+void KautzSelmanRintanenEncodingFactory::set_up_single_step() {
 	for (size_t op = 0; op < task_proxy.get_operators().size(); op++)
 		global_action_ordering.push_back(op);
 }
@@ -684,7 +678,7 @@ void KautzSelmanRintanenEncoding::set_up_single_step() {
 // Function computes for a given operator, all facts that it
 // 1) might need. These are preconditions and all conditions of conditional effects
 // 2) it might delete. This includes derived predicates that it might delete
-pair<vector<FactPair>, vector<FactPair> > KautzSelmanRintanenEncoding::compute_needs_and_deletes_for_operator(int op){
+pair<vector<FactPair>, vector<FactPair> > KautzSelmanRintanenEncodingFactory::compute_needs_and_deletes_for_operator(int op){
 	vector<FactPair> needs;
 	vector<FactPair> deletes;
 	OperatorProxy opProxy = task_proxy.get_operators()[op];
@@ -765,7 +759,7 @@ pair<vector<FactPair>, vector<FactPair> > KautzSelmanRintanenEncoding::compute_n
 }
 
 
-void KautzSelmanRintanenEncoding::set_up_efficient_conflict_testing(){
+void KautzSelmanRintanenEncodingFactory::set_up_efficient_conflict_testing(){
 	// prepare data structures needed for compatibility checking
 	// TODO: copied from pruning/stubborn_sets.cc maybe create common super class
     sorted_op_preconditions = utils::map_vector<vector<FactPair>>(
@@ -791,7 +785,7 @@ void KautzSelmanRintanenEncoding::set_up_efficient_conflict_testing(){
 
 
 
-void KautzSelmanRintanenEncoding::set_up_exists_step() {
+void KautzSelmanRintanenEncodingFactory::set_up_exists_step() {
 	/////////// Exists step encoding
 	// compute the disabling graph
 	map<FactPair,set<int>> needingOperators;
@@ -982,10 +976,10 @@ void KautzSelmanRintanenEncoding::generateChain(vector<int> & operator_variables
 
 void KautzSelmanRintanenEncoding::exists_step_restriction(vector<int> & operator_variables, int time){
 	// loop over all fact pairs
-	for (auto & [factPair, requiringLists] : requiringList){
+	for (auto & [factPair, requiringLists] : factory->requiringList){
 		for (size_t scc = 0; scc < requiringLists.size(); scc++){
-			assert(erasingList.count(factPair));
-			const std::vector<std::pair<int,int>> & E = erasingList[factPair][scc];
+			assert(factory->erasingList.count(factPair));
+			const std::vector<std::pair<int,int>> & E = factory->erasingList[factPair][scc];
 			const std::vector<std::pair<int,int>> & R = requiringLists[scc];
 
 			// no chain to be generated
@@ -998,18 +992,18 @@ void KautzSelmanRintanenEncoding::exists_step_restriction(vector<int> & operator
 
 
 int KautzSelmanRintanenEncoding::get_fact_var(int time, FactProxy fact){
-	assert(statically_true_derived_predicates.count(fact.get_variable().get_id()) == 0);
+	assert(factory->statically_true_derived_predicates.count(fact.get_variable().get_id()) == 0);
 	return fact_variables[time][fact.get_variable().get_id()][fact.get_value()];
 }
 
 int KautzSelmanRintanenEncoding::get_axiom_var(int time, int layer, FactProxy fact){
-	assert(statically_true_derived_predicates.count(fact.get_variable().get_id()) == 0);
+	assert(factory->statically_true_derived_predicates.count(fact.get_variable().get_id()) == 0);
 	assert(fact.get_value() == 1);
 	return axiom_variables[time][fact.get_variable().get_id()][layer];
 }
 
 int KautzSelmanRintanenEncoding::get_last_axiom_var(int time, FactProxy fact){
-	assert(statically_true_derived_predicates.count(fact.get_variable().get_id()) == 0);
+	assert(factory->statically_true_derived_predicates.count(fact.get_variable().get_id()) == 0);
 	if (fact.get_value() == 1)
 		return axiom_variables[time][fact.get_variable().get_id()].back();
 	else
@@ -1051,7 +1045,7 @@ void KautzSelmanRintanenEncoding::printVariableTruth(){
 void KautzSelmanRintanenEncoding::axiom_encoding_for_timestep(int time){
 	// final value of the axioms implies their value for the next layer
 	for (size_t var = 0; var < task_proxy.get_variables().size(); var++){
-		if (task_proxy.get_variables()[var].is_derived() && statically_true_derived_predicates.count(var) == 0){
+		if (task_proxy.get_variables()[var].is_derived() && factory->statically_true_derived_predicates.count(var) == 0){
 			// if axiom evaluates to true, its value 1 is the correct one
 			sat->implies(axiom_variables[time][var].back(),fact_variables[time][var][1]);
 			// if axiom evaluates to false, its value 0 is the correct one
@@ -1064,15 +1058,15 @@ void KautzSelmanRintanenEncoding::axiom_encoding_for_timestep(int time){
 	// actual evaluation of axioms
 
 	int sccCount = 0;
-	for (AxiomSCC & scc : axiomSCCsInTopOrder){
+	for (AxiomSCC & scc : factory->axiomSCCsInTopOrder){
 		DEBUG(if (sccCount && sccCount % 1000 == 0){
-			log << "Generated Axiom SCC " << sccCount << " of " << axiomSCCsInTopOrder.size() << endl;
+			log << "Generated Axiom SCC " << sccCount << " of " << factory->axiomSCCsInTopOrder.size() << endl;
 		});
 		sccCount++;
 		set<int> sset(scc.variables.begin(), scc.variables.end());
 		if (scc.sizeOne) {
 			scc.numberOfAxiomLayers = 1;
-			if (statically_true_derived_predicates.count(scc.variables[0])){
+			if (factory->statically_true_derived_predicates.count(scc.variables[0])){
 				continue; // don't need to generate anything for this variable
 			}
 		}
@@ -1082,7 +1076,7 @@ void KautzSelmanRintanenEncoding::axiom_encoding_for_timestep(int time){
 			// initially all axioms are false
 			for (int var : scc.variables){
 				if (task_proxy.get_variables()[var].is_derived()){
-					if (statically_true_derived_predicates.count(var))
+					if (factory->statically_true_derived_predicates.count(var))
 						sat->assertYes(axiom_variables[time][var][0]);
 					else
 						sat->assertNot(axiom_variables[time][var][0]);
@@ -1093,7 +1087,7 @@ void KautzSelmanRintanenEncoding::axiom_encoding_for_timestep(int time){
 			for (int layer = 0; layer < scc.numberOfAxiomLayers; layer++){
 				vector<vector<int>> causeVariables (task_proxy.get_variables().size());
 				for (int sccvar : scc.variables){
-					//if (statically_true_derived_predicates.count(sccvar)) {
+					//if (factory->statically_true_derived_predicates.count(sccvar)) {
 					//	assertYes(solver,axiom_variables[time][sccvar][layer+1]);
 					//	continue;
 					//}
@@ -1105,7 +1099,7 @@ void KautzSelmanRintanenEncoding::axiom_encoding_for_timestep(int time){
 					causeVariables[sccvar].push_back(scc_var_fact_cur);
 					registerClauses("axioms evaluation");
 
-					for (OperatorProxy opProxy : achievers_per_derived[sccvar]){
+					for (OperatorProxy opProxy : factory->achievers_per_derived[sccvar]){
 						// Effect
 						EffectsProxy effs = opProxy.get_effects();
 						assert(effs.size() == 1);
@@ -1114,7 +1108,7 @@ void KautzSelmanRintanenEncoding::axiom_encoding_for_timestep(int time){
 						assert(thisEff.get_fact().get_variable().is_derived());
 						int eff_var = thisEff.get_fact().get_variable().get_id();
 						assert(eff_var == sccvar);
-						assert(statically_true_derived_predicates.count(eff_var) == 0);
+						assert(factory->statically_true_derived_predicates.count(eff_var) == 0);
 						int eff_fact_var = get_axiom_var(time,layer+1,thisEff.get_fact());
 						assert(eff_fact_var == scc_var_fact);
 
@@ -1139,7 +1133,7 @@ void KautzSelmanRintanenEncoding::axiom_encoding_for_timestep(int time){
 									continue;	
 								}
 
-								if (statically_true_derived_predicates.count(fact.get_variable().get_id())){
+								if (factory->statically_true_derived_predicates.count(fact.get_variable().get_id())){
 									if (fact.get_value()) continue;	// condition is always true
 									inApplicable = true;
 									break;
@@ -1182,7 +1176,7 @@ void KautzSelmanRintanenEncoding::axiom_encoding_for_timestep(int time){
 				for (int var : scc.variables){
 					assert(task_proxy.get_variables()[var].is_derived());
 					assert(axiom_variables[time][var].size() > size_t(layer)+1);
-					if (statically_true_derived_predicates.count(var)) continue;
+					if (factory->statically_true_derived_predicates.count(var)) continue;
 					int eff_var = axiom_variables[time][var][layer+1];
 					sat->impliesOr(eff_var,causeVariables[var]);
 					assert(causeVariables[var].size());
@@ -1195,12 +1189,12 @@ void KautzSelmanRintanenEncoding::axiom_encoding_for_timestep(int time){
 			
 			vector<vector<int>> causeVariablesLayer0 (task_proxy.get_variables().size());
 			for (int sccvar : scc.variables){
-				assert(statically_true_derived_predicates.count(sccvar) == 0);
+				assert(factory->statically_true_derived_predicates.count(sccvar) == 0);
 				//if (statically_true_derived_predicates.count(sccvar)) {
 				//	assertYes(solver,axiom_variables[time][sccvar][0]);
 				//	continue;
 				//}
-				for (OperatorProxy opProxy : achievers_per_derived[sccvar]){
+				for (OperatorProxy opProxy : factory->achievers_per_derived[sccvar]){
 
 					// Effect
 					EffectsProxy effs = opProxy.get_effects();
@@ -1209,7 +1203,7 @@ void KautzSelmanRintanenEncoding::axiom_encoding_for_timestep(int time){
 					assert(thisEff.get_fact().get_value() == 1);
 					assert(thisEff.get_fact().get_variable().is_derived());
 					int eff_var = thisEff.get_fact().get_variable().get_id();
-					assert(statically_true_derived_predicates.count(eff_var) == 0);
+					assert(factory->statically_true_derived_predicates.count(eff_var) == 0);
 					int eff_fact_var = get_axiom_var(time,0,thisEff.get_fact());
 
 					set<int> conditions;
@@ -1235,7 +1229,7 @@ void KautzSelmanRintanenEncoding::axiom_encoding_for_timestep(int time){
 								continue;	
 							}
 							
-							if (statically_true_derived_predicates.count(fact.get_variable().get_id())){
+							if (factory->statically_true_derived_predicates.count(fact.get_variable().get_id())){
 								if (fact.get_value()) continue;	// condition is always true
 								inApplicable = true;
 								break;
@@ -1279,7 +1273,7 @@ void KautzSelmanRintanenEncoding::axiom_encoding_for_timestep(int time){
 			}
 
 			for (int var : scc.variables){
-				if (statically_true_derived_predicates.count(var)) continue;
+				if (factory->statically_true_derived_predicates.count(var)) continue;
 				if (task_proxy.get_variables()[var].is_derived()){
 					int eff_var = axiom_variables[time][var][0];
 					sat->impliesOr(eff_var,causeVariablesLayer0[var]);
@@ -1305,7 +1299,7 @@ void KautzSelmanRintanenEncoding::axiom_encoding_for_timestep(int time){
 
 				for (size_t varOffsetTo = 0; varOffsetTo < scc.variables.size(); varOffsetTo++){
 					int varTo = scc.variables[varOffsetTo];
-					if (statically_true_derived_predicates.count(varTo)) continue;
+					if (factory->statically_true_derived_predicates.count(varTo)) continue;
 					vector<int> causeVariables;
 					for (size_t varOffset : scc.directTransitiveCauses[varOffsetTo]){
 						int var = scc.variables[varOffset];
@@ -1322,7 +1316,7 @@ void KautzSelmanRintanenEncoding::axiom_encoding_for_timestep(int time){
 				for (int value = 0; value < varProxy.get_domain_size(); value++){
 					for (size_t varOffset = 0; varOffset < scc.variables.size(); varOffset++){
 						int var = scc.variables[varOffset];
-						//if (statically_true_derived_predicates.count(var)) {
+						//if (factory->statically_true_derived_predicates.count(var)) {
 						//	assertYes(solver,axiom_variables[time][var][1]);
 						//	continue;
 						//}
@@ -1338,7 +1332,7 @@ void KautzSelmanRintanenEncoding::axiom_encoding_for_timestep(int time){
 
 					for (size_t varOffsetTo = 0; varOffsetTo < scc.variables.size(); varOffsetTo++){
 						int varTo = scc.variables[varOffsetTo];
-						if (statically_true_derived_predicates.count(varTo)) continue;
+						if (factory->statically_true_derived_predicates.count(varTo)) continue;
 						vector<int> causeVariables;
 						for (size_t varOffset : scc.guardedTransitiveCauses[value][varOffsetTo]){
 							int var = scc.variables[varOffset];
@@ -1374,7 +1368,7 @@ void KautzSelmanRintanenEncoding::generate_fact_variables(int time){
 	fact_variables[time].resize(task_proxy.get_variables().size());
 	for (size_t var = 0; var < task_proxy.get_variables().size(); var++){
 		// don't need to generate anything for statically true facts.
-		if (statically_true_derived_predicates.count(var)) continue;
+		if (factory->statically_true_derived_predicates.count(var)) continue;
 		VariableProxy varProxy = task_proxy.get_variables()[var];
 		// we use a non-compressed encoding -- one hot
 		// TODO strategy pattern for binary encoding -- as for each variable only one value can be true at any time!
@@ -1394,10 +1388,10 @@ void KautzSelmanRintanenEncoding::generate_derived_predicate_variables(int time)
 		VariableProxy varProxy = task_proxy.get_variables()[var];
 		if (!varProxy.is_derived()) continue;
 		// don't need to generate anything for statically true facts.
-		if (statically_true_derived_predicates.count(var)) continue;
+		if (factory->statically_true_derived_predicates.count(var)) continue;
 
-		axiom_variables[time][var].resize(numberOfAxiomLayerVariablesPerDerived[var] + 1);
-		for (int layer = 0; layer <= numberOfAxiomLayerVariablesPerDerived[var]; layer++){
+		axiom_variables[time][var].resize(factory->numberOfAxiomLayerVariablesPerDerived[var] + 1);
+		for (int layer = 0; layer <= factory->numberOfAxiomLayerVariablesPerDerived[var]; layer++){
 			// variables from axioms must be "boolean"
 			assert(varProxy.get_domain_size() == 2);
 			
@@ -1435,7 +1429,7 @@ void KautzSelmanRintanenEncoding::encode_direct_preconditions_and_effects_of_act
 
 			// edge case -> if the precondition is a derived predicate that is statically true or false
 			// we can optimise it out
-			if (statically_true_derived_predicates.count(fact.get_variable().get_id())){
+			if (factory->statically_true_derived_predicates.count(fact.get_variable().get_id())){
 				// this precondition is always true, ignore it.
 				if (fact.get_value()) continue;
 				// precondition is always false, to disable action
@@ -1472,7 +1466,7 @@ void KautzSelmanRintanenEncoding::encode_direct_preconditions_and_effects_of_act
 			// gather the conditions of the conditional effect in a set
 			for (size_t i = 0; i < cond.size(); i++){
 				// edge case: derived predicates that are statically true or false
-				if (statically_true_derived_predicates.count(cond[i].get_variable().get_id())){
+				if (factory->statically_true_derived_predicates.count(cond[i].get_variable().get_id())){
 					// this precondition is always true, ignore it.
 					if (cond[i].get_value()) continue;
 					// precondition is always false, to disable action
@@ -1657,7 +1651,7 @@ void KautzSelmanRintanenEncoding::encode(int fromTime, int toTime) {
 	//////////////////////////////////////////////////////////////////
 	// 8. State Mutexes
 	for (size_t var = 0; var < task_proxy.get_variables().size(); var++){
-		if (statically_true_derived_predicates.count(var)) continue;
+		if (factory->statically_true_derived_predicates.count(var)) continue;
 		sat->atMostOne(fact_variables[fromTime][var]);
 		sat->atLeastOne(fact_variables[fromTime][var]);
 	}
@@ -1685,7 +1679,7 @@ void KautzSelmanRintanenEncoding::encodeInit(int fromTime, bool retractable) {
 	init.unpack();
 	for (size_t i = 0; i < init.size(); i++){
 		//if (init[i].get_variable().is_derived()) continue;
-		if (statically_true_derived_predicates.count(init[i].get_variable().get_id())) continue;
+		if (factory->statically_true_derived_predicates.count(init[i].get_variable().get_id())) continue;
 		sat->assertYes(get_fact_var(fromTime,init[i]));
 	}
 	registerClauses("init");
@@ -1697,7 +1691,7 @@ void KautzSelmanRintanenEncoding::encodeInit(int fromTime, bool retractable) {
 void KautzSelmanRintanenEncoding::encodeGoal(int toTime, bool retractable) {
 	GoalsProxy goals = task_proxy.get_goals();
 	for (size_t i = 0; i < goals.size(); i++){
-		if (statically_true_derived_predicates.count(goals[i].get_variable().get_id()) == 1){
+		if (factory->statically_true_derived_predicates.count(goals[i].get_variable().get_id()) == 1){
 			assert(goals[i].get_value() == 1);
 			// statically true goals do not have to be satisfied.
 			continue;
@@ -1725,15 +1719,15 @@ std::tuple<State,std::vector<State>,Plan> KautzSelmanRintanenEncoding::extractSo
 
 	// maps operator to their index in the global ordering
 	std::vector<int> global_action_indexing(task_proxy.get_operators().size());
-	for(size_t i = 0; i < global_action_ordering.size(); i++)
-		global_action_indexing[global_action_ordering[i]] = i;
+	for(size_t i = 0; i < factory->global_action_ordering.size(); i++)
+		global_action_indexing[factory->global_action_ordering[i]] = i;
 
 	map<int,int> planPositionsToSATStates;
 	planPositionsToSATStates[0] = 0;
 	Plan plan;
 
 	// plan extraction
-	for (int time = 0; time < currentLength; time++){
+	for (auto [time,toTime] : time_step_order){
 		map<int,int> operatorsThisTime;
 		for (size_t op = 0; op < task_proxy.get_operators().size(); op++){
 			// the leaf operators don't have to be inserted into the plan
@@ -1791,7 +1785,7 @@ std::tuple<State,std::vector<State>,Plan> KautzSelmanRintanenEncoding::extractSo
 
 		if (!existsStep || planPositionsToSATStates.count(i)){
 			for (size_t j = 0; j < s.size(); ++j){
-				if (statically_true_derived_predicates.count(s[j].get_variable().get_id())) continue;
+				if (factory->statically_true_derived_predicates.count(s[j].get_variable().get_id())) continue;
 				//if (ipasir_val(solver,get_fact_var(planPositionsToSATStates[i],s[j])) <= 0){
 				//	log << "ERR plan step " << i << " original " << planPositionsToSATStates[i] << endl;
 				//	log << "State " << j << " " << s[j].get_value() << " " << get_fact_var(planPositionsToSATStates[i],s[j]) << " sat: " << 
