@@ -663,6 +663,7 @@ create_fast_downward_library(
     NAME plugin_sat
 	HELP "SAT search"
     SOURCES
+		sat/plugin_kautzselmanrintanen
 		search_algorithms/plugin_sat
     DEPENDS
         sat_search
