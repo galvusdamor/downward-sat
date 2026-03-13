@@ -34,7 +34,7 @@ void KautzSelmanRintanenEncodingFactory::initialize(const TaskProxy _task_proxy,
 	set_up_axioms();
 
 	// prepare for parallelism encodings 
-	if (encoding == 0)
+	if (encoding == 2)
 		set_up_exists_step();
 	else
 		set_up_single_step();
@@ -980,6 +980,7 @@ void KautzSelmanRintanenEncoding::generateChain(vector<int> & operator_variables
 void KautzSelmanRintanenEncoding::exists_step_restriction(vector<int> & operator_variables, int time){
 	// loop over all fact pairs
 	for (auto & [factPair, requiringLists] : factory->requiringList){
+		log << "List" << endl;
 		for (size_t scc = 0; scc < requiringLists.size(); scc++){
 			assert(factory->erasingList.count(factPair));
 			const std::vector<std::pair<int,int>> & E = factory->erasingList[factPair][scc];
@@ -1382,6 +1383,17 @@ void KautzSelmanRintanenEncoding::generate_fact_variables(int time){
 			DEBUG(sat->registerVariable(factVar,"fa " + utils::pad_int(var) + "=" + utils::pad_int(val) + " @ " + utils::pad_int(time) + " " + varProxy.get_name() + "=" + varProxy.get_fact(val).get_name()));
 		}
 	}
+
+	// State Mutexes
+	for (size_t var = 0; var < task_proxy.get_variables().size(); var++){
+		if (factory->statically_true_derived_predicates.count(var)) continue;
+		sat->atMostOne(fact_variables[time][var]);
+		sat->atLeastOne(fact_variables[time][var]);
+	}
+	// TODO add more mutexes to be encoded. At the moment, we only add those directly implied by the FDR groups.
+	// additional ones could be e.g. h2 mutexes.
+	registerClauses("state mutexes");
+
 }
 
 
@@ -1562,6 +1574,7 @@ void KautzSelmanRintanenEncoding::encode_direct_preconditions_and_effects_of_act
 
 
 void KautzSelmanRintanenEncoding::encode(int fromTime, int toTime) {
+	curClauseNumber = sat->get_number_of_clauses();
 	//////////////////////////////////////////////////////////////////
 	////////////// 1. Generate all base variables (actions and facts)
 
@@ -1648,19 +1661,9 @@ void KautzSelmanRintanenEncoding::encode(int fromTime, int toTime) {
 	AxiomsProxy axioms = task_proxy.get_axioms();
 	DEBUG(log << "=> Generating axioms for timestep " << fromTime  << endl);
 	axiom_encoding_for_timestep(fromTime);
-	DEBUG(log << "Axioms done. Generating init and goal." << endl);
+	DEBUG(log << "Axioms done." << endl);
 
 	
-	//////////////////////////////////////////////////////////////////
-	// 8. State Mutexes
-	for (size_t var = 0; var < task_proxy.get_variables().size(); var++){
-		if (factory->statically_true_derived_predicates.count(var)) continue;
-		sat->atMostOne(fact_variables[fromTime][var]);
-		sat->atLeastOne(fact_variables[fromTime][var]);
-	}
-	// TODO add more mutexes to be encoded. At the moment, we only add those directly implied by the FDR groups.
-	// additional ones could be e.g. h2 mutexes.
-	registerClauses("state mutexes");
 	
 	//////////////////////////////////////////////////////////////////
 	// 9. Action Control -- Determine which actions can be executed in parallel.
@@ -1709,6 +1712,20 @@ void KautzSelmanRintanenEncoding::encodeGoal(int toTime, bool retractable) {
 		}
 	}
 	registerClauses("goal");
+
+	//////////////////////////////////////////////////////////////////
+	// Generation of formula done
+	//DEBUG(sat->printVariables());
+
+
+	// print variable and clause statistics
+	log << "Variables" << setw(23) << setfill(' ') << "total: " << setw(8) << setfill(' ') << sat->number_of_variables << endl;
+	for (auto [a,b] : variableCounter)
+		log << setw(30) << setfill(' ') << a << ": " << setw(8) << setfill(' ') << b << endl;
+	log << "Clauses" << setw(25) << setfill(' ') << "total: " << setw(8) << setfill(' ') << sat->get_number_of_clauses() << endl;
+	for (auto [a,b] : clauseCounter)
+		log << setw(30) << setfill(' ') << a << ": " << setw(8) << setfill(' ') << b << endl;
+
 }
 
 
@@ -1808,27 +1825,5 @@ std::tuple<State,std::vector<State>,Plan> KautzSelmanRintanenEncoding::extractSo
 void KautzSelmanRintanenEncoding::assertLabelsAtTime(int fromTime, std::set<int> labels) {
 
 };
-
-
-
-//// Run the SAT planner for *one* specific number of time steps
-//// This length is stored in currentLength -- it cannot be an argument for this function as the step function cannot have any arguments.
-//SearchStatus KautzSelmanRintanenEncoding::step() {
-//
-//	//////////////////////////////////////////////////////////////////
-//	// Generation of formula done
-//	DEBUG(sat->printVariables());
-//
-//
-//	// print variable and clause statistics
-//	log << "Variables" << setw(23) << setfill(' ') << "total: " << setw(8) << setfill(' ') << sat->number_of_variables << endl;
-//	for (auto [a,b] : variableCounter)
-//		log << setw(30) << setfill(' ') << a << ": " << setw(8) << setfill(' ') << b << endl;
-//	log << "Clauses" << setw(25) << setfill(' ') << "total: " << setw(8) << setfill(' ') << sat->get_number_of_clauses() << endl;
-//	for (auto [a,b] : clauseCounter)
-//		log << setw(30) << setfill(' ') << a << ": " << setw(8) << setfill(' ') << b << endl;
-//}
-
-
 
 }
