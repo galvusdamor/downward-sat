@@ -23,6 +23,14 @@ public:
             "join all groups of operators above the exists-step threshold into a single big group",
             "true");
    		add_option<bool>(
+            "fdr_mutexes",
+            "encode mutexes based on fdr variables",
+            "true");
+   		add_option<bool>(
+            "additional_mutexes",
+            "encode any additional mutex that is found",
+            "true");
+   		add_option<bool>(
             "forceAtLeastOneAction",
             "force at least one action per timestep",
             "true");
@@ -36,6 +44,8 @@ public:
 			options_copy.get<int>("encoding"),
 			options_copy.get<int>("disabling_threshold"),
 			options_copy.get<bool>("join_groups_above_threshold"),
+			options_copy.get<bool>("fdr_mutexes"),
+			options_copy.get<bool>("additional_mutexes"),
 			options_copy.get<bool>("forceAtLeastOneAction")
 			);
     }

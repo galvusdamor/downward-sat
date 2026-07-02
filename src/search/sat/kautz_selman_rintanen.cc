@@ -44,7 +44,7 @@ void KautzSelmanRintanenEncodingFactory::initialize(const TaskProxy _task_proxy,
 	
 	
 std::unique_ptr<SATEncoding> KautzSelmanRintanenEncodingFactory::createEncodingInstance(std::shared_ptr<sat_capsule> capsule){
-	return make_unique<KautzSelmanRintanenEncoding>(this,encoding,disablingThreshold,aboveThresholdGroupJoining,capsule,*task_proxy,forceAtLeastOneAction,*log);
+	return make_unique<KautzSelmanRintanenEncoding>(this,encoding,disablingThreshold,aboveThresholdGroupJoining,encode_fdr_mutexes,encode_additional_mutexes,capsule,*task_proxy,forceAtLeastOneAction,*log);
 
 };
 
@@ -55,6 +55,8 @@ KautzSelmanRintanenEncoding::KautzSelmanRintanenEncoding(
 	int _encoding,
 	int	_disablingThreshold,
 	bool _aboveThresholdGroupJoining,
+	bool _encode_fdr_mutexes,
+	bool _encode_additional_mutexes,
 	std::shared_ptr<sat_capsule> capsule,
 	const TaskProxy _task_proxy,
 	bool forceAtLeastOneAction,
@@ -63,6 +65,8 @@ KautzSelmanRintanenEncoding::KautzSelmanRintanenEncoding(
 	factory(_factory),
 	disablingThreshold(_disablingThreshold),
 	aboveThresholdGroupJoining(_aboveThresholdGroupJoining),
+	encode_fdr_mutexes(_encode_fdr_mutexes),
+	encode_additional_mutexes(_encode_additional_mutexes),
 	log(_log)
 	{
 
@@ -1044,6 +1048,29 @@ void KautzSelmanRintanenEncoding::printVariableTruth(){
 	}
 }
 
+void KautzSelmanRintanenEncoding::mutex_encoding_for_timestep(int time){
+	// State Mutexes based on FDR variables
+	if (encode_fdr_mutexes){
+		for (size_t var = 0; var < task_proxy.get_variables().size(); var++){
+			if (factory->statically_true_derived_predicates.count(var)) continue;
+			sat->atMostOne(fact_variables[time][var]);
+			sat->atLeastOne(fact_variables[time][var]);
+		}
+	}
+
+	// additional mutexes from the input
+	if (encode_additional_mutexes){
+		MutexesProxy mutexes = task_proxy.get_mutexes();
+		for (size_t m = 0; m < mutexes.size(); m++){
+			MutexProxy mutex = mutexes[m];
+			FactProxy f1 = mutex.get_first();
+			FactProxy f2 = mutex.get_second();
+			
+			sat->impliesNot(get_fact_var(time,f1), get_fact_var(time, f2));
+		}
+	}
+}
+
 
 void KautzSelmanRintanenEncoding::axiom_encoding_for_timestep(int time){
 	// final value of the axioms implies their value for the next layer
@@ -1383,16 +1410,10 @@ void KautzSelmanRintanenEncoding::generate_fact_variables(int time){
 		}
 	}
 
-	// State Mutexes
-	for (size_t var = 0; var < task_proxy.get_variables().size(); var++){
-		if (factory->statically_true_derived_predicates.count(var)) continue;
-		sat->atMostOne(fact_variables[time][var]);
-		sat->atLeastOne(fact_variables[time][var]);
-	}
-	// TODO add more mutexes to be encoded. At the moment, we only add those directly implied by the FDR groups.
-	// additional ones could be e.g. h2 mutexes.
-	registerClauses("state mutexes");
+	// encode mutex clauses for the state -- we do it at generation time as we want to ensure they are encoded only once
+	mutex_encoding_for_timestep(time);
 
+	registerClauses("state mutexes");
 }
 
 
@@ -1657,11 +1678,13 @@ void KautzSelmanRintanenEncoding::encode(int fromTime, int toTime) {
 	// 5. Evaluation of axioms
 	// assumption here is: the variables in fact_variables are the ones
 	// that are supposed to be used for preconditions
-	AxiomsProxy axioms = task_proxy.get_axioms();
+	//AxiomsProxy axioms = task_proxy.get_axioms();
 	DEBUG(log << "=> Generating axioms for timestep " << fromTime  << endl);
 	axiom_encoding_for_timestep(fromTime);
 	DEBUG(log << "Axioms done." << endl);
 
+	//////////////////////////////////////////////////////////////////
+	// 6. Mutexes
 	
 	
 	//////////////////////////////////////////////////////////////////

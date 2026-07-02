@@ -81,6 +81,8 @@ private:
 	int encoding;
 	int	disablingThreshold;
 	bool aboveThresholdGroupJoining;
+	bool encode_fdr_mutexes;
+	bool encode_additional_mutexes;
 
 	void set_up_axioms();
 	void set_up_exists_step();
@@ -91,11 +93,15 @@ public:
 			int _encoding,
 			int	_disablingThreshold,
 			bool _aboveThresholdGroupJoining,
+			bool _encode_fdr_mutexes,
+			bool _encode_additional_mutexes,
 			bool forceAtLeastOneAction):
 		SATEncodingFactory(forceAtLeastOneAction),
 		encoding(_encoding),
 		disablingThreshold(_disablingThreshold),
-		aboveThresholdGroupJoining(_aboveThresholdGroupJoining)
+		aboveThresholdGroupJoining(_aboveThresholdGroupJoining),
+		encode_fdr_mutexes(_encode_fdr_mutexes),
+		encode_additional_mutexes(_encode_additional_mutexes)
 		{ };
 			
 	virtual std::unique_ptr<SATEncoding> createEncodingInstance(std::shared_ptr<sat_capsule> capsule) override;
@@ -113,6 +119,8 @@ public:
 	bool existsStep = true;
 	int disablingThreshold;
 	bool aboveThresholdGroupJoining;
+	bool encode_fdr_mutexes;
+	bool encode_additional_mutexes;
 
 
 	// dynamic variables generated while creating the formula
@@ -136,6 +144,7 @@ public:
 	std::map<int,std::vector<std::vector<std::vector<int>>>> deleterVars;
 
 
+	void mutex_encoding_for_timestep(int time);
 	void axiom_encoding_for_timestep(int time);
 	
 	void printVariableTruth();
@@ -167,6 +176,8 @@ public:
 		KautzSelmanRintanenEncodingFactory* _factory,
 		int _encoding,
 		int	_disablingThreshold,
+		bool _encode_fdr_mutexes,
+		bool _encode_additional_mutexes,
 		bool _aboveThresholdGroupJoining,
 		std::shared_ptr<sat_capsule> capsule, const TaskProxy _task_proxy, bool forceAtLeastOneAction,
     	utils::LogProxy _log);
