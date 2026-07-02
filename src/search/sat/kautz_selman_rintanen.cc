@@ -980,7 +980,6 @@ void KautzSelmanRintanenEncoding::generateChain(vector<int> & operator_variables
 void KautzSelmanRintanenEncoding::exists_step_restriction(vector<int> & operator_variables, int time){
 	// loop over all fact pairs
 	for (auto & [factPair, requiringLists] : factory->requiringList){
-		log << "List" << endl;
 		for (size_t scc = 0; scc < requiringLists.size(); scc++){
 			assert(factory->erasingList.count(factPair));
 			const std::vector<std::pair<int,int>> & E = factory->erasingList[factPair][scc];
