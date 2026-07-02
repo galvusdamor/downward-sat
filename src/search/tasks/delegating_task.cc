@@ -35,6 +35,14 @@ bool DelegatingTask::are_facts_mutex(const FactPair &fact1, const FactPair &fact
     return parent->are_facts_mutex(fact1, fact2);
 }
 
+int DelegatingTask::get_num_mutexes() const {
+    return parent->get_num_mutexes();
+}
+
+std::pair<FactPair,FactPair> DelegatingTask::get_mutex(int num) const {
+    return parent->get_mutex(num);
+}
+
 int DelegatingTask::get_operator_cost(int index, bool is_axiom) const {
     return parent->get_operator_cost(index, is_axiom);
 }

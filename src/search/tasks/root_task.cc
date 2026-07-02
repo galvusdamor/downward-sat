@@ -56,6 +56,7 @@ class RootTask : public AbstractTask {
     vector<ExplicitVariable> variables;
     // TODO: think about using hash sets here.
     vector<vector<set<FactPair>>> mutexes;
+    vector<pair<FactPair,FactPair>> mutexes_list;
     vector<ExplicitOperator> operators;
     vector<ExplicitOperator> axioms;
     vector<int> initial_state_values;
@@ -76,6 +77,9 @@ public:
     virtual string get_fact_name(const FactPair &fact) const override;
     virtual bool are_facts_mutex(
         const FactPair &fact1, const FactPair &fact2) const override;
+    virtual std::pair<FactPair,FactPair> get_mutex(int num) const override; 
+    virtual int get_num_mutexes() const override;
+
 
     virtual int get_operator_cost(int index, bool is_axiom) const override;
     virtual string get_operator_name(
@@ -250,8 +254,9 @@ static vector<ExplicitVariable> read_variables(istream &in) {
     return variables;
 }
 
-static vector<vector<set<FactPair>>> read_mutexes(istream &in, const vector<ExplicitVariable> &variables) {
+static pair<vector<vector<set<FactPair>>>, vector<pair<FactPair,FactPair>>> read_mutexes(istream &in, const vector<ExplicitVariable> &variables) {
     vector<vector<set<FactPair>>> inconsistent_facts(variables.size());
+    vector<pair<FactPair,FactPair>> inconsistent_list;
     for (size_t i = 0; i < variables.size(); ++i)
         inconsistent_facts[i].resize(variables[i].domain_size);
 
@@ -292,11 +297,12 @@ static vector<vector<set<FactPair>>> read_mutexes(istream &in, const vector<Expl
                        to *some* redundant mutexes, where some but not
                        all facts talk about the same variable. */
                     inconsistent_facts[fact1.var][fact1.value].insert(fact2);
+                    inconsistent_list.push_back({fact1,fact2});
                 }
             }
         }
     }
-    return inconsistent_facts;
+    return {inconsistent_facts, inconsistent_list};
 }
 
 static vector<FactPair> read_goal(istream &in) {
@@ -330,7 +336,9 @@ RootTask::RootTask(istream &in) {
     variables = read_variables(in);
     int num_variables = variables.size();
 
-    mutexes = read_mutexes(in, variables);
+    auto [_mutex_map,_mutex_list] = read_mutexes(in, variables);
+    mutexes = _mutex_map;
+    mutexes_list = _mutex_list;
 
     initial_state_values.resize(num_variables);
     check_magic(in, "begin_state");
@@ -414,6 +422,14 @@ bool RootTask::are_facts_mutex(const FactPair &fact1, const FactPair &fact2) con
     assert(utils::in_bounds(fact1.var, mutexes));
     assert(utils::in_bounds(fact1.value, mutexes[fact1.var]));
     return bool(mutexes[fact1.var][fact1.value].count(fact2));
+}
+
+int RootTask::get_num_mutexes() const{
+    return mutexes_list.size();
+}
+
+std::pair<FactPair,FactPair> RootTask::get_mutex(int num) const {
+    return mutexes_list[num];
 }
 
 int RootTask::get_operator_cost(int index, bool is_axiom) const {

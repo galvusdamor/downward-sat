@@ -29,6 +29,8 @@ public:
     virtual std::string get_fact_name(const FactPair &fact) const override;
     virtual bool are_facts_mutex(
         const FactPair &fact1, const FactPair &fact2) const override;
+    virtual int get_num_mutexes() const override;
+    virtual std::pair<FactPair,FactPair> get_mutex(int num) const override;
 
     virtual int get_operator_cost(int index, bool is_axiom) const override;
     virtual std::string get_operator_name(int index, bool is_axiom) const override;
