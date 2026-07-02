@@ -4,8 +4,6 @@
 #include "../search_algorithm.h"
 #include "../sat/sat_encoder.h"
 #include "../sat/sat_encoding.h"
-//#include "../task_representation/transition_system.h"
-//#include "../task_representation/label_equivalence_relation.h"
 
 
 namespace plugins {

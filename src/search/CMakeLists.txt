@@ -651,6 +651,8 @@ create_fast_downward_library(
 	HELP "SAT search"
     SOURCES
 		sat/length_strategy
+		search_algorithms/incremental_sat_search
+		search_algorithms/rintanen_search
 		search_algorithms/sat_search
 		sat/kautz_selman_rintanen
         sat/sat_encoder
@@ -666,6 +668,8 @@ create_fast_downward_library(
 		sat/plugin_kautzselmanrintanen
 		sat/plugin_sat_encoding
 		search_algorithms/plugin_sat
+		search_algorithms/plugin_incremental_sat
+		search_algorithms/plugin_rintanen
     DEPENDS
         sat_search
         search_common
