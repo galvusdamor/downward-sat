@@ -26,6 +26,7 @@ class EffectsProxy;
 class FactProxy;
 class FactsProxy;
 class GoalsProxy;
+class MutexesProxy;
 class OperatorProxy;
 class OperatorsProxy;
 class PreconditionsProxy;
@@ -553,6 +554,57 @@ public:
     }
 };
 
+class MutexProxy {
+    const AbstractTask *task;
+    FactPair fact1;
+    FactPair fact2;
+public:
+    MutexProxy(const AbstractTask &task, int var_id1, int value1, int var_id2, int value2);
+    MutexProxy(const AbstractTask &task, const FactPair &fact1, const FactPair &fact2);
+    ~MutexProxy() = default;
+
+	FactProxy get_first() const {
+		return FactProxy(*task,fact1);
+	}
+
+	FactProxy get_second() const {
+		return FactProxy(*task,fact2);
+	}
+
+    bool operator==(const MutexProxy &other) const {
+        assert(task == other.task);
+		// order of facts does not matter
+        return (fact1 == other.fact1 && fact2 == other.fact2) || (fact1 == other.fact2 && fact2 == other.fact1);
+    }
+
+    bool operator!=(const MutexProxy &other) const {
+        return !(*this == other);
+    }
+};
+
+
+class MutexesProxy {
+    const AbstractTask *task;
+public:
+    //using ItemType = OperatorProxy;
+    explicit MutexesProxy(const AbstractTask &task)
+        : task(&task) {}
+    ~MutexesProxy() = default;
+
+    std::size_t size() const {
+        return task->get_num_mutexes();
+    }
+
+    bool empty() const {
+        return size() == 0;
+    }
+
+    MutexProxy operator[](std::size_t index) const {
+        assert(index < size());
+        return MutexProxy(*task, task->get_mutex(index).first, task->get_mutex(index).second);
+    }
+};
+
 
 bool does_fire(const EffectProxy &effect, const State &state);
 
@@ -685,6 +737,10 @@ public:
         return GoalsProxy(*task);
     }
 
+    MutexesProxy get_mutexes() const {
+        return MutexesProxy(*task);
+    }
+
     State create_state(std::vector<int> &&state_values) const {
         return State(*task, std::move(state_values));
     }
@@ -740,6 +796,19 @@ inline FactProxy::FactProxy(const AbstractTask &task, const FactPair &fact)
 
 inline FactProxy::FactProxy(const AbstractTask &task, int var_id, int value)
     : FactProxy(task, FactPair(var_id, value)) {
+}
+
+inline MutexProxy::MutexProxy(const AbstractTask &task, const FactPair &fact1, const FactPair &fact2)
+    : task(&task), fact1(fact1), fact2(fact2) {
+    assert(fact1.var >= 0 && fact1.var < task.get_num_variables());
+    assert(fact1.value >= 0 && fact1.value < get_variable().get_domain_size());
+    assert(fact2.var >= 0 && fact2.var < task.get_num_variables());
+    assert(fact2.value >= 0 && fact2.value < get_variable().get_domain_size());
+}
+
+
+inline MutexProxy::MutexProxy(const AbstractTask &task, int var_id1, int value1, int var_id2, int value2)
+    : MutexProxy(task, FactPair(var_id1, value1), FactPair(var_id2, value2)) {
 }
 
 
