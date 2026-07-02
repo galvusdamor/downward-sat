@@ -69,6 +69,7 @@ NO_RETURN extern void exit_with(ExitCode returncode);
 NO_RETURN extern void exit_with_reentrant(ExitCode returncode);
 
 int get_peak_memory_in_kb();
+int get_current_memory_in_kb();
 const char *get_exit_code_message_reentrant(ExitCode exitcode);
 bool is_exit_code_error_reentrant(ExitCode exitcode);
 void register_event_handlers();
