@@ -14,26 +14,7 @@ public:
             "encoding",
             "set the encoding. Currently supported are OneStep: 0 and ExistsStep: 2",
             "2");
-   		add_option<int>(
-            "disabling_threshold",
-            "threshold for the size of the disabling graph. If graph becomes larger than this, make simplifying assumptions.",
-            "5000000");
-   		add_option<bool>(
-            "join_groups_above_threshold",
-            "join all groups of operators above the exists-step threshold into a single big group",
-            "true");
-   		add_option<bool>(
-            "fdr_mutexes",
-            "encode mutexes based on fdr variables",
-            "true");
-   		add_option<bool>(
-            "additional_mutexes",
-            "encode any additional mutex that is found",
-            "true");
-   		add_option<bool>(
-            "forceAtLeastOneAction",
-            "force at least one action per timestep",
-            "true");
+		sat_search::add_base_encoding_options_to_feature(*this, "disabling()");
     }
 
 
@@ -42,11 +23,7 @@ public:
         plugins::Options options_copy(opts);
         return plugins::make_shared_from_arg_tuples<sat_search::KautzSelmanRintanenEncodingFactory>(
 			options_copy.get<int>("encoding"),
-			options_copy.get<int>("disabling_threshold"),
-			options_copy.get<bool>("join_groups_above_threshold"),
-			options_copy.get<bool>("fdr_mutexes"),
-			options_copy.get<bool>("additional_mutexes"),
-			options_copy.get<bool>("forceAtLeastOneAction")
+			sat_search::get_base_encoding_arguments_from_options(options_copy)
 			);
     }
 

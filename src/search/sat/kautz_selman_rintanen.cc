@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <iomanip>
 #include <fstream>
@@ -20,31 +21,32 @@
 
 using namespace std;
 
-#define registerClauses(NAME) clauseCounter[NAME] += sat->get_number_of_clauses() - curClauseNumber; curClauseNumber = sat->get_number_of_clauses();
 
 
 namespace sat_search {
 
 	
-void KautzSelmanRintanenEncodingFactory::initialize(const TaskProxy _task_proxy, utils::LogProxy _log) {
-
-	task_proxy = std::make_shared<TaskProxy>(_task_proxy);
-	log = std::make_shared<utils::LogProxy>(_log);
+void KautzSelmanRintanenEncodingFactory::analyse_task() {
 	// set up data structures for derived predicates and axioms -- won't do anything if none of them exist.
 	set_up_axioms();
+}
 
+void KautzSelmanRintanenEncodingFactory::compute_action_ordering() {
 	// prepare for parallelism encodings 
 	if (encoding == 2)
 		set_up_exists_step();
 	else
 		set_up_single_step();
+}
 
-	assert(global_action_ordering.size() == task_proxy->get_operators().size());
+void KautzSelmanRintanenEncodingFactory::prepare_encoding() {
+	if (encoding == 2)
+		build_erasing_and_requiring_lists();
 }
 	
 	
 std::unique_ptr<SATEncoding> KautzSelmanRintanenEncodingFactory::createEncodingInstance(std::shared_ptr<sat_capsule> capsule){
-	return make_unique<KautzSelmanRintanenEncoding>(this,encoding,disablingThreshold,aboveThresholdGroupJoining,encode_fdr_mutexes,encode_additional_mutexes,capsule,*task_proxy,forceAtLeastOneAction,*log);
+	return make_unique<KautzSelmanRintanenEncoding>(this,encoding,capsule,*task_proxy,forceAtLeastOneAction,*log);
 
 };
 
@@ -53,21 +55,12 @@ std::unique_ptr<SATEncoding> KautzSelmanRintanenEncodingFactory::createEncodingI
 KautzSelmanRintanenEncoding::KautzSelmanRintanenEncoding(
 	KautzSelmanRintanenEncodingFactory* _factory,
 	int _encoding,
-	int	_disablingThreshold,
-	bool _aboveThresholdGroupJoining,
-	bool _encode_fdr_mutexes,
-	bool _encode_additional_mutexes,
 	std::shared_ptr<sat_capsule> capsule,
 	const TaskProxy _task_proxy,
 	bool forceAtLeastOneAction,
 	utils::LogProxy _log)
-	:SATEncoding(capsule,_task_proxy,forceAtLeastOneAction),
-	factory(_factory),
-	disablingThreshold(_disablingThreshold),
-	aboveThresholdGroupJoining(_aboveThresholdGroupJoining),
-	encode_fdr_mutexes(_encode_fdr_mutexes),
-	encode_additional_mutexes(_encode_additional_mutexes),
-	log(_log)
+	:BaseEncoding(_factory,capsule,_task_proxy,forceAtLeastOneAction,_log),
+	factory(_factory)
 	{
 
 	switch (_encoding){
@@ -80,40 +73,7 @@ KautzSelmanRintanenEncoding::KautzSelmanRintanenEncoding(
 
 }
 
-// TODO copied from pruning/stubborn_sets_action_centric.h
-// Relies on both fact sets being sorted by variable.
-static bool contain_conflicting_fact(const vector<FactPair> &facts1,
-                                     const vector<FactPair> &facts2) {
-    auto facts1_it = facts1.begin();
-    auto facts2_it = facts2.begin();
-    while (facts1_it != facts1.end() && facts2_it != facts2.end()) {
-        if (facts1_it->var < facts2_it->var) {
-            ++facts1_it;
-        } else if (facts1_it->var > facts2_it->var) {
-            ++facts2_it;
-        } else {
-            if (facts1_it->value != facts2_it->value)
-                return true;
-            ++facts1_it;
-            ++facts2_it;
-        }
-    }
-    return false;
-}
 
-bool KautzSelmanRintanenEncodingFactory::can_be_executed_in_same_state(int op1_no, int op2_no){
-    return !contain_conflicting_fact(sorted_op_preconditions[op1_no],
-                                    			   sorted_op_preconditions[op2_no]);
-}
-
-bool KautzSelmanRintanenEncodingFactory::have_actions_unconflicting_effects(int op1_no, int op2_no){
-    return !contain_conflicting_fact(sorted_op_effects[op1_no],
-                                    			   sorted_op_effects[op2_no]);
-}
-
-
-// mode = true: causing fact has become *true*
-// mode = false: causing fact has become *false*
 void KautzSelmanRintanenEncodingFactory::axiom_dfs(int var, set<int> & posReachable, set<int> & negReachable, bool mode){
 	if (mode){
 		// causing fact has become true, this means the DP could turn true
@@ -766,162 +726,60 @@ pair<vector<FactPair>, vector<FactPair> > KautzSelmanRintanenEncodingFactory::co
 }
 
 
-void KautzSelmanRintanenEncodingFactory::set_up_efficient_conflict_testing(){
-	// prepare data structures needed for compatibility checking
-	// TODO: copied from pruning/stubborn_sets.cc maybe create common super class
-    sorted_op_preconditions = utils::map_vector<vector<FactPair>>(
-        task_proxy->get_operators(), [](const OperatorProxy &op) {
-            return utils::sorted<FactPair>(
-                task_properties::get_fact_pairs(op.get_preconditions()));
-        });
-
-    sorted_op_effects = utils::map_vector<vector<FactPair>>(
-        task_proxy->get_operators(), [](const OperatorProxy &op) {
-			EffectsProxy effProx = op.get_effects();
-			vector<EffectProxy> unconditionalEffects;
-			for (EffectProxy eff : effProx)
-				if (eff.get_conditions().size() == 0)
-					unconditionalEffects.push_back(eff);
-
-            return utils::sorted<FactPair>(
-                utils::map_vector<FactPair>(
-                    unconditionalEffects,
-                    [](const EffectProxy &eff) {return eff.get_fact().get_pair();}));
-        });
-}
-
-
-
 void KautzSelmanRintanenEncodingFactory::set_up_exists_step() {
 	/////////// Exists step encoding
-	// compute the disabling graph
-	map<FactPair,set<int>> needingOperators;
-	map<FactPair,set<int>> deletingOperators;
+	// compute which operators need and delete which facts
 	for(size_t op = 0; op < task_proxy->get_operators().size(); op ++){
 		if (op % 1000 == 0)
 			*log << "Disabling Graph Operator " << op << " of " << task_proxy->get_operators().size() << endl;
 		auto [needs, deletes] = compute_needs_and_deletes_for_operator(op);
-		for (const FactPair & f : needs) needingOperators[f].insert(op);
-		for (const FactPair & f : deletes) deletingOperators[f].insert(op);
+		for (const FactPair & f : needs) interference.needing[f].insert(op);
+		for (const FactPair & f : deletes) interference.deleting[f].insert(op);
 	}
 
-	// create data structure that allow for efficient testing whether action have non-conflicting preconditions and effects
-	set_up_efficient_conflict_testing();
+	// the ordering (by default the one based on the SCCs of the disabling graph)
+	ordering_result = compute_ordering(interference);
+	global_action_ordering = ordering_result.order;
+}
 
-	// data structure for the disabling graph. This is only temporary. The actual edges are not needed later on an can be discarded
-	// once the global action ordering is determined.
-	vector<set<int>> disabling_graph(task_proxy->get_operators().size());
-	int number_of_edges_in_disabling_graph = 0;
-	int number_refuted_edges_in_disabling_graph = 0;
-	unordered_set<int> sequentialOperators;
-	set<FactPair> thresholdFacts;
-	
-	
-	// actually compute the edges of the graph
-	for (auto [fact, deleters] : deletingOperators){
-		if (needingOperators[fact].size() == 0) {
-			thresholdFacts.insert(fact);
-			continue;
-		}
-		int checkSize = deleters.size() * needingOperators[fact].size();
-		//log << "DG " << fact << " deleter " << deleters.size() << " needers " << needingOperators[fact].size() << " checks " << checkSize << endl;
-		if (checkSize > disablingThreshold){
-			thresholdFacts.insert(fact);
-			unordered_set<int> thisSequentialOperators;
-			for (int deleter : deleters){
-				sequentialOperators.insert(deleter);
-				thisSequentialOperators.insert(deleter);
-			}
-			for (int needer : needingOperators[fact]){
-				sequentialOperators.insert(needer);
-				thisSequentialOperators.insert(needer);
-			}
-
-			if (aboveThresholdGroupJoining) continue;
-
-			vector<int> atMostOneGroup;
-			for (const int & op : thisSequentialOperators)
-				atMostOneGroup.push_back(op);
-
-			continue;
-		}
-		for (int deleter : deleters){
-			for (int needer : needingOperators[fact]){
-				if (deleter == needer) continue;
-				// if preconditions are incompatible, action's don't disable each other
-				if (!can_be_executed_in_same_state(deleter,needer)) {
-					number_refuted_edges_in_disabling_graph++;
-					continue;	
-				}
-				if (!have_actions_unconflicting_effects(deleter,needer)) {
-					number_refuted_edges_in_disabling_graph++;
-					continue;	
-				}
-
-				// deleter disables needer
-				if (disabling_graph[deleter].count(needer)) continue; // only count inserted edges once
-
-				disabling_graph[deleter].insert(needer);
-				number_of_edges_in_disabling_graph++;
-			}
+void KautzSelmanRintanenEncodingFactory::build_erasing_and_requiring_lists() {
+	const vector<vector<int>> & groups = ordering_result.groups;
+	// group and position in the group for every operator
+	vector<int> group_of_operator(task_proxy->get_operators().size(), -1);
+	vector<int> position_in_group(task_proxy->get_operators().size(), -1);
+	for (size_t group = 0; group < groups.size(); group++){
+		// no disabling possible in groups of size one.
+		if (groups[group].size() == 1) continue;
+		for (size_t pos = 0; pos < groups[group].size(); pos++){
+			group_of_operator[groups[group][pos]] = group;
+			position_in_group[groups[group][pos]] = pos;
 		}
 	}
 
-	*log << "Generated Disabling Graph with " << number_of_edges_in_disabling_graph << " edges." << std::endl;
-	double refute_quota = double(number_refuted_edges_in_disabling_graph) / (number_of_edges_in_disabling_graph + number_refuted_edges_in_disabling_graph);
-	*log << "Refuted " << number_refuted_edges_in_disabling_graph << " edges. Quota: " << fixed << setprecision(5) << refute_quota << std::endl;
-
-	*log << "Due to threshold, treating " << sequentialOperators.size() << " of " << task_proxy->get_operators().size() << " operators as sequential." << endl; 
-	if (aboveThresholdGroupJoining && sequentialOperators.size()){
-		vector<int> atMostOneGroup;
-		for (const int & op : sequentialOperators)
-			atMostOneGroup.push_back(op);
-	}
-
-
-	vector<vector<int>> disabling_graph_vector(task_proxy->get_operators().size());
-	for(size_t op = 0; op < task_proxy->get_operators().size(); op++){
-		for (const int & op2 : disabling_graph[op]){
-			disabling_graph_vector[op].push_back(op2);
+	auto add_to_list = [&](const set<int> & operators, vector<vector<pair<int,int>>> & list){
+		for (int op : operators){
+			if (group_of_operator[op] == -1) continue;
+			list[group_of_operator[op]].push_back({op, position_in_group[op]});
 		}
+		// sort by position in the group
+		for (auto & groupList : list)
+			sort(groupList.begin(), groupList.end(),
+				[](const pair<int,int> & a, const pair<int,int> & b){return a.second < b.second;});
+	};
+
+	for (auto & [factPair, deleters] : interference.deleting){
+		if (ordering_result.unconstrained_facts.count(factPair)) continue; // don't need to generate anything for these
+		erasingList[factPair].resize(groups.size());
+		requiringList[factPair].resize(groups.size());
+		add_to_list(deleters, erasingList[factPair]);
+		auto needers = interference.needing.find(factPair);
+		if (needers != interference.needing.end())
+			add_to_list(needers->second, requiringList[factPair]);
 	}
 
-	// print to file
-	//graph_to_dot(disabling_graph_vector,"disabling.graph");
-
-	vector<vector<int>> disabling_sccs = sccs::compute_maximal_sccs(disabling_graph_vector);
-	*log << "Disabling Graph contains " << disabling_sccs.size() << " SCCS." << std::endl;
-	
-	// go backwards though the SCCs
-	for (int scc = disabling_sccs.size() - 1; scc >= 0; scc--){
-
-		//log << "\t SCC No " << scc << endl;
-		for (size_t i = 0; i < disabling_sccs[scc].size(); i++){
-		//for (int i = disabling_sccs[scc].size() - 1; i >= 0; i--){
-			const int & opID = disabling_sccs[scc][i];
-			global_action_ordering.push_back(opID);
-			//log << "\t\t Operator " << opID << " " << task_proxy->get_operators()[opID].get_name() << endl;
-		}
-	}
-
-	for (auto & [factPair, _ignore] : deletingOperators){
-		if (thresholdFacts.count(factPair)) continue; // don't need to generate anything for these
-		erasingList[factPair].resize(disabling_sccs.size());
-		requiringList[factPair].resize(disabling_sccs.size());
-		for (size_t scc = 0; scc < disabling_sccs.size(); scc++){
-			if (disabling_sccs[scc].size() == 1) continue; // no disabling possible.
-			for (size_t sccOp = 0; sccOp < disabling_sccs[scc].size(); sccOp++){
-				int op = disabling_sccs[scc][sccOp];
-				// check if this operator has this fact as a precondition
-				if (needingOperators[factPair].count(op))
-					requiringList[factPair][scc].push_back({op, sccOp});
-
-				// check if this operator has this fact as an effect
-				if (deletingOperators[factPair].count(op))
-					erasingList[factPair][scc].push_back({op, sccOp});
-			}
-		}
-	}
+	// not needed any more
+	interference = InterferenceInfo();
+	ordering_result = ActionOrderingResult();
 	*log << "Build enabling disabling lists." << std::endl;
 }
 
@@ -998,11 +856,6 @@ void KautzSelmanRintanenEncoding::exists_step_restriction(vector<int> & operator
 }
 
 
-int KautzSelmanRintanenEncoding::get_fact_var(int time, FactProxy fact){
-	assert(factory->statically_true_derived_predicates.count(fact.get_variable().get_id()) == 0);
-	return fact_variables[time][fact.get_variable().get_id()][fact.get_value()];
-}
-
 int KautzSelmanRintanenEncoding::get_axiom_var(int time, int layer, FactProxy fact){
 	assert(factory->statically_true_derived_predicates.count(fact.get_variable().get_id()) == 0);
 	assert(fact.get_value() == 1);
@@ -1025,11 +878,6 @@ int KautzSelmanRintanenEncoding::get_last_axiom_var(int time, FactPair fact){
 		return -axiom_variables[time][fact.var].back();
 }
 
-int KautzSelmanRintanenEncoding::get_fact_var(int time, FactPair fact){
-	return fact_variables[time][fact.var][fact.value];
-}
-
-
 void KautzSelmanRintanenEncoding::printVariableTruth(){
 	for (int v = 1; v <= sat->number_of_variables; v++){
 		int val = ipasir_val(sat->solver,v);
@@ -1047,30 +895,6 @@ void KautzSelmanRintanenEncoding::printVariableTruth(){
 #endif
 	}
 }
-
-void KautzSelmanRintanenEncoding::mutex_encoding_for_timestep(int time){
-	// State Mutexes based on FDR variables
-	if (encode_fdr_mutexes){
-		for (size_t var = 0; var < task_proxy.get_variables().size(); var++){
-			if (factory->statically_true_derived_predicates.count(var)) continue;
-			sat->atMostOne(fact_variables[time][var]);
-			sat->atLeastOne(fact_variables[time][var]);
-		}
-	}
-
-	// additional mutexes from the input
-	if (encode_additional_mutexes){
-		MutexesProxy mutexes = task_proxy.get_mutexes();
-		for (size_t m = 0; m < mutexes.size(); m++){
-			MutexProxy mutex = mutexes[m];
-			FactProxy f1 = mutex.get_first();
-			FactProxy f2 = mutex.get_second();
-			
-			sat->impliesNot(get_fact_var(time,f1), get_fact_var(time, f2));
-		}
-	}
-}
-
 
 void KautzSelmanRintanenEncoding::axiom_encoding_for_timestep(int time){
 	// final value of the axioms implies their value for the next layer
@@ -1384,39 +1208,6 @@ void KautzSelmanRintanenEncoding::axiom_encoding_for_timestep(int time){
 
 
 
-void KautzSelmanRintanenEncoding::generate_operator_variables(int time){
-	for (size_t op = 0; op < task_proxy.get_operators().size(); op ++){
-		int opvar = sat->new_variable();
-		operator_variables[time].push_back(opvar);
-		variableCounter["operator"]++;
-		DEBUG(sat->registerVariable(opvar,"op " + utils::pad_int(op) + " @ " + utils::pad_int(time) + " " + task_proxy.get_operators()[op].get_name()));
-	}
-}
-
-
-void KautzSelmanRintanenEncoding::generate_fact_variables(int time){
-	fact_variables[time].resize(task_proxy.get_variables().size());
-	for (size_t var = 0; var < task_proxy.get_variables().size(); var++){
-		// don't need to generate anything for statically true facts.
-		if (factory->statically_true_derived_predicates.count(var)) continue;
-		VariableProxy varProxy = task_proxy.get_variables()[var];
-		// we use a non-compressed encoding -- one hot
-		// TODO strategy pattern for binary encoding -- as for each variable only one value can be true at any time!
-		for (int val = 0; val < varProxy.get_domain_size(); val++){
-			int factVar = sat->new_variable();
-			fact_variables[time][var].push_back(factVar);
-			variableCounter["facts"]++;
-			DEBUG(sat->registerVariable(factVar,"fa " + utils::pad_int(var) + "=" + utils::pad_int(val) + " @ " + utils::pad_int(time) + " " + varProxy.get_name() + "=" + varProxy.get_fact(val).get_name()));
-		}
-	}
-
-	// encode mutex clauses for the state -- we do it at generation time as we want to ensure they are encoded only once
-	mutex_encoding_for_timestep(time);
-
-	registerClauses("state mutexes");
-}
-
-
 void KautzSelmanRintanenEncoding::generate_derived_predicate_variables(int time){
 	axiom_variables[time].resize(task_proxy.get_variables().size());
 	for (size_t var = 0; var < task_proxy.get_variables().size(); var++){
@@ -1700,152 +1491,8 @@ void KautzSelmanRintanenEncoding::encode(int fromTime, int toTime) {
 	registerClauses("action control");
 }
 
-//////////////////////////////////////////////////////////////////
-// Initial state
-void KautzSelmanRintanenEncoding::encodeInit(int fromTime, bool retractable) {
-	State init = task_proxy.get_initial_state();
-	init.unpack();
-	for (size_t i = 0; i < init.size(); i++){
-		//if (init[i].get_variable().is_derived()) continue;
-		if (factory->statically_true_derived_predicates.count(init[i].get_variable().get_id())) continue;
-		sat->assertYes(get_fact_var(fromTime,init[i]));
-	}
-	registerClauses("init");
+int KautzSelmanRintanenEncoding::get_derived_goal_var(int time, FactProxy goal){
+	return get_last_axiom_var(time, goal);
 }
-
-
-//////////////////////////////////////////////////////////////////
-// Goal state
-void KautzSelmanRintanenEncoding::encodeGoal(int toTime, bool retractable) {
-	GoalsProxy goals = task_proxy.get_goals();
-	for (size_t i = 0; i < goals.size(); i++){
-		if (factory->statically_true_derived_predicates.count(goals[i].get_variable().get_id()) == 1){
-			assert(goals[i].get_value() == 1);
-			// statically true goals do not have to be satisfied.
-			continue;
-		}
-
-		if (goals[i].get_variable().is_derived()){
-			DEBUG(log << "Derived GOAL " << goals[i].get_variable().get_id() << " " << goals[i].get_value() << " " << get_last_axiom_var(toTime,goals[i]) << endl);
-			sat->assertYes(get_last_axiom_var(toTime,goals[i]));
-		} else {
-			DEBUG(log << "Regular GOAL " << goals[i].get_variable().get_id() << " " << goals[i].get_value() << " " << get_fact_var(toTime,goals[i]) << endl);
-			sat->assertYes(get_fact_var(toTime,goals[i]));
-		}
-	}
-	registerClauses("goal");
-
-	//////////////////////////////////////////////////////////////////
-	// Generation of formula done
-	//DEBUG(sat->printVariables());
-
-
-	// print variable and clause statistics
-	log << "Variables" << setw(23) << setfill(' ') << "total: " << setw(8) << setfill(' ') << sat->number_of_variables << endl;
-	for (auto [a,b] : variableCounter)
-		log << setw(30) << setfill(' ') << a << ": " << setw(8) << setfill(' ') << b << endl;
-	log << "Clauses" << setw(25) << setfill(' ') << "total: " << setw(8) << setfill(' ') << sat->get_number_of_clauses() << endl;
-	for (auto [a,b] : clauseCounter)
-		log << setw(30) << setfill(' ') << a << ": " << setw(8) << setfill(' ') << b << endl;
-
-}
-
-
-void KautzSelmanRintanenEncoding::encodeStateEquals(int fromTime, int toTime, bool retractable){
-
-}
-
-
-std::tuple<State,std::vector<State>,Plan> KautzSelmanRintanenEncoding::extractSolution(int initTime, std::vector<std::pair<int,int>> time_step_order) {
-	//printVariableTruth(solver,capsule);
-
-	// maps operator to their index in the global ordering
-	std::vector<int> global_action_indexing(task_proxy.get_operators().size());
-	for(size_t i = 0; i < factory->global_action_ordering.size(); i++)
-		global_action_indexing[factory->global_action_ordering[i]] = i;
-
-	map<int,int> planPositionsToSATStates;
-	planPositionsToSATStates[0] = 0;
-	Plan plan;
-
-	// plan extraction
-	for (auto [time,toTime] : time_step_order){
-		map<int,int> operatorsThisTime;
-		for (size_t op = 0; op < task_proxy.get_operators().size(); op++){
-			// the leaf operators don't have to be inserted into the plan
-			int opvar = operator_variables[time][op];
-			int val = ipasir_val(sat->solver,opvar);
-			if (val > 0){
-				operatorsThisTime[global_action_indexing[op]] = op;
-				//DEBUG(log << "time " << time << " operator " << task_proxy.get_operators()[op].get_name() << endl);
-				//log << "kisvar " << opvar << " " << kissat_import_literal((kissat*)solver,opvar) << endl;
-			}
-		}
-
-		// sort the operators according to their global sorting
-		for (auto & [_sortkey, op] : operatorsThisTime){
-			plan.push_back(OperatorID(op));
-			log << "time " << time << " Event: " << plan.size() << " sorted operator " << task_proxy.get_operators()[op].get_name() << endl;
-		}
-
-		planPositionsToSATStates[plan.size()] = time + 1;
-	}
-    
-	//for(int time = 0; time <= currentLength; time++){
-	//	for (size_t var = 0; var < task_proxy.get_variables().size(); var++){
-	//		if (var >= 2) continue;
-	//		VariableProxy varProxy = task_proxy.get_variables()[var];
-	//		for (int val = 0; val < varProxy.get_domain_size(); val++){
-	//			int factVar = fact_variables[time][var][val];
-	//			if (ipasir_val(solver,factVar) > 0){
-	//				log << "time " << time << " " <<varProxy.get_name() << "=" <<  varProxy.get_fact(val).get_name() << endl;
-	//			}
-	//		}
-	//	}
-	//}
-
-	OperatorsProxy operators = task_proxy.get_operators();
-	State cur = task_proxy.get_initial_state();
-	vector<State> visited_states;
-	visited_states.push_back(cur);
-	
-	for (size_t i = 0; i < plan.size(); ++i) {
-	    cur = cur.get_unregistered_successor(operators[plan[i]]);
-	    visited_states.push_back(cur);
-	}
-
-	AxiomEvaluator &axiom_evaluator = g_axiom_evaluators[task_proxy];
-	for (size_t i = 0; i < visited_states.size(); ++i){
-		State & s = visited_states[i];
-		// TODO it seems that the state registry evaluates axioms for us
-    	s.unpack();
-		vector<int> upack = s.get_unpacked_values();
-		axiom_evaluator.evaluate(upack);
-		s = task_proxy.create_state(move(upack));
-		s.unpack();
-		//task_properties::dump_fdr(s);
-
-		if (!existsStep || planPositionsToSATStates.count(i)){
-			for (size_t j = 0; j < s.size(); ++j){
-				if (factory->statically_true_derived_predicates.count(s[j].get_variable().get_id())) continue;
-				//if (ipasir_val(solver,get_fact_var(planPositionsToSATStates[i],s[j])) <= 0){
-				//	log << "ERR plan step " << i << " original " << planPositionsToSATStates[i] << endl;
-				//	log << "State " << j << " " << s[j].get_value() << " " << get_fact_var(planPositionsToSATStates[i],s[j]) << " sat: " << 
-				//		ipasir_val(solver,get_fact_var(planPositionsToSATStates[i],s[j])) << endl;
-				//	//exit(-1);
-				//}
-				//assert(ipasir_val(solver,get_fact_var(planPositionsToSATStates[i],s[j])) > 0);
-			}
-		}
-	}
-   
-
-	return make_tuple(visited_states.back(),visited_states,plan);	
-};
-
-// functions for debugging
-void KautzSelmanRintanenEncoding::assertLabelsAtTime(int fromTime, std::set<int> labels) {
-
-};
 
 }

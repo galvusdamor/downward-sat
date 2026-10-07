@@ -654,7 +654,15 @@ create_fast_downward_library(
 		search_algorithms/incremental_sat_search
 		search_algorithms/rintanen_search
 		search_algorithms/sat_search
+		sat/base_encoding
 		sat/kautz_selman_rintanen
+		sat/relaxed_relaxed_exists_step
+		sat/ordering/action_ordering
+		sat/ordering/disabling_graph_ordering
+		sat/ordering/file_ordering
+		sat/ordering/input_ordering
+		sat/ordering/random_ordering
+		sat/ordering/topological_ordering
         sat/sat_encoder
     DEPENDS
 		sat_solver
@@ -666,7 +674,9 @@ create_fast_downward_library(
 	HELP "SAT search"
     SOURCES
 		sat/plugin_kautzselmanrintanen
+		sat/plugin_relaxed_relaxed_exists_step
 		sat/plugin_sat_encoding
+		sat/ordering/plugin_orderings
 		search_algorithms/plugin_sat
 		search_algorithms/plugin_incremental_sat
 		search_algorithms/plugin_rintanen

@@ -1,8 +1,7 @@
 #ifndef KAUTZ_SELMAN_RINTANEN_H
 #define KAUTZ_SELMAN_RINTANEN_H
 
-#include "sat_encoder.h"
-#include "sat_encoding.h"
+#include "base_encoding.h"
 
 #include <memory>
 #include <vector>
@@ -33,16 +32,10 @@ struct AxiomSCC{
 	
 };
 
-// abstract interface for initialisation of SAT encoding
-class KautzSelmanRintanenEncodingFactory : public SATEncodingFactory, std::enable_shared_from_this<KautzSelmanRintanenEncodingFactory> {
+class KautzSelmanRintanenEncodingFactory : public BaseEncodingFactory {
 public:
 	// TODO fill and use this map
 	std::map<int,std::map<int,int>> operator_precondition_map;	
-
-	// static knowledge about the problem:
-	// whether a derived predicate is statically true
-	std::unordered_set<int> statically_true_derived_predicates;
-
 
 	// axiom structure graph
 	std::vector<std::vector<int>> derived_implication;
@@ -57,58 +50,48 @@ public:
 	std::vector<std::vector<OperatorProxy>> achievers_per_derived;
 
 	// exists step
-	std::vector<int> global_action_ordering;
 	// generate Erasing and Requiring list
-	// per fact, per SCC, gives a list of all E/R as a pair: <operator,position_in_scc>
+	// per fact, per group (SCC of the disabling graph), gives a list of all E/R as a pair: <operator,position_in_group>
 	std::map<FactPair,std::vector< std::vector<std::pair<int,int>>  >> erasingList;
 	std::map<FactPair,std::vector< std::vector<std::pair<int,int>>  >> requiringList;
 
-
 	std::pair<std::vector<FactPair>, std::vector<FactPair> > compute_needs_and_deletes_for_operator(int op);
-
-	// efficient access data structure, needed for testing whether two action have compatible preconditions and effect
-	// these are the tests can_be_executed_in_same_state and have_actions_unconflicting_effects
-	// static information about the planning problem.
-    std::vector<std::vector<FactPair>> sorted_op_preconditions;
-    std::vector<std::vector<FactPair>> sorted_op_effects;
-	void set_up_efficient_conflict_testing();
-	bool can_be_executed_in_same_state(int op1_no, int op2_no);
-	bool have_actions_unconflicting_effects(int op1_no, int op2_no);
-
-
 
 private:
 	int encoding;
-	int	disablingThreshold;
-	bool aboveThresholdGroupJoining;
-	bool encode_fdr_mutexes;
-	bool encode_additional_mutexes;
+
+	// only needed between computing the ordering and preparing the encoding
+	InterferenceInfo interference;
+	ActionOrderingResult ordering_result;
 
 	void set_up_axioms();
 	void set_up_exists_step();
 	void set_up_single_step();
+	void build_erasing_and_requiring_lists();
+
+protected:
+	void analyse_task() override;
+	void compute_action_ordering() override;
+	void prepare_encoding() override;
 
 public:
 	KautzSelmanRintanenEncodingFactory(
 			int _encoding,
-			int	_disablingThreshold,
-			bool _aboveThresholdGroupJoining,
+			std::shared_ptr<ActionOrdering> _ordering,
+			const std::string &_write_ordering_file,
+			bool _stop_after_ordering,
 			bool _encode_fdr_mutexes,
 			bool _encode_additional_mutexes,
 			bool forceAtLeastOneAction):
-		SATEncodingFactory(forceAtLeastOneAction),
-		encoding(_encoding),
-		disablingThreshold(_disablingThreshold),
-		aboveThresholdGroupJoining(_aboveThresholdGroupJoining),
-		encode_fdr_mutexes(_encode_fdr_mutexes),
-		encode_additional_mutexes(_encode_additional_mutexes)
+		BaseEncodingFactory(_ordering, _write_ordering_file, _stop_after_ordering,
+			_encode_fdr_mutexes, _encode_additional_mutexes, forceAtLeastOneAction),
+		encoding(_encoding)
 		{ };
 			
 	virtual std::unique_ptr<SATEncoding> createEncodingInstance(std::shared_ptr<sat_capsule> capsule) override;
-	virtual void initialize(const TaskProxy _task_proxy, utils::LogProxy _log) override;
 };
 
-class KautzSelmanRintanenEncoding : public SATEncoding {
+class KautzSelmanRintanenEncoding : public BaseEncoding {
 public:
 	KautzSelmanRintanenEncodingFactory* factory;
 	
@@ -117,20 +100,6 @@ public:
 	
 	// actual run configuration
 	bool existsStep = true;
-	int disablingThreshold;
-	bool aboveThresholdGroupJoining;
-	bool encode_fdr_mutexes;
-	bool encode_additional_mutexes;
-
-
-	// dynamic variables generated while creating the formula
-	// index: timestep -> operator 
-	std::map<int,std::vector<int>> operator_variables;
-
-	// index: timestep -> variable -> value
-	std::map<int,std::vector<std::vector<int>>> fact_variables;
-	int get_fact_var(int time, FactProxy fact);
-	int get_fact_var(int time, FactPair fact);
 
 	// index: timestep -> variable
 	std::map<int,std::vector<std::vector<int>>> axiom_variables;
@@ -144,7 +113,6 @@ public:
 	std::map<int,std::vector<std::vector<std::vector<int>>>> deleterVars;
 
 
-	void mutex_encoding_for_timestep(int time);
 	void axiom_encoding_for_timestep(int time);
 	
 	void printVariableTruth();
@@ -156,41 +124,23 @@ public:
 		    const std::vector<std::pair<int, int>>& E, const std::vector<std::pair<int, int>>& R, int time);
 
 	
-	int curClauseNumber;
-	std::map<std::string,int> clauseCounter;
-	std::map<std::string,int> variableCounter;
-	
-	
-	void generate_operator_variables(int time);
-	void generate_fact_variables(int time);
 	void generate_derived_predicate_variables(int time);
 	void encode_direct_preconditions_and_effects_of_action(int time,
 		std::map<FactPair, std::map<std::set<int>,std::vector<int>>> conditionBuffer,
 		std::map<FactPair, std::map<std::set<int>, int>> conditionVariable
 			);
 
+	int get_derived_goal_var(int time, FactProxy goal) override;
+
 public:
-    mutable utils::LogProxy log;
-	
 	KautzSelmanRintanenEncoding(
 		KautzSelmanRintanenEncodingFactory* _factory,
 		int _encoding,
-		int	_disablingThreshold,
-		bool _encode_fdr_mutexes,
-		bool _encode_additional_mutexes,
-		bool _aboveThresholdGroupJoining,
 		std::shared_ptr<sat_capsule> capsule, const TaskProxy _task_proxy, bool forceAtLeastOneAction,
     	utils::LogProxy _log);
 
 
 	void encode(int fromTime, int toTime) override;
-	void encodeInit(int fromTime, bool retractable) override;
-	void encodeGoal(int toTime, bool retractable) override;
-	void encodeStateEquals(int fromTime, int toTime, bool retractable) override;
-	std::tuple<State,std::vector<State>,Plan> extractSolution(int initTime, std::vector<std::pair<int,int>> time_step_order) override;
-	
-	// functions for debugging
-	void assertLabelsAtTime(int fromTime, std::set<int> labels) override;
 };
 
 
