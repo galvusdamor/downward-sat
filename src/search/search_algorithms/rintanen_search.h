@@ -17,6 +17,7 @@ class RintanenSATSearch : public SearchAlgorithm, std::enable_shared_from_this<R
 	const std::shared_ptr<SATEncodingFactory> encoding_factory;
 	const size_t max_parallel_calls;
 	const int scheduler_interval_seconds;
+	const double gamma;
 	const bool dont_schedule_formula_generation;
 	const int memory_limit_mbs;
 
@@ -28,6 +29,7 @@ public:
     explicit RintanenSATSearch(
 		int _max_parallel_calls,
 		int _scheduler_interval_seconds,
+		double _gamma,
 		bool _dont_schedule_formula_generation,
 		int _memory_limit_mbs,
 		std::shared_ptr<LengthStrategy> _length_strategy, std::shared_ptr<SATEncodingFactory> _encoding_factory,

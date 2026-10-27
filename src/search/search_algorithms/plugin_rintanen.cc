@@ -22,6 +22,9 @@ public:
 			"max_parallel_calls","maximum number of SAT calls run in parallel", "20");
 		add_option<int> (
 			"scheduler_interval","interval for the schedule in seconds", "1");
+		add_option<double> (
+			"gamma","geometric time share: the i-th open length (0 = shortest) gets turns of "
+			"scheduler_interval * gamma^i; 1 = round-robin", "1.0");
 		add_option<int> (
 			"memory_limit_mb","memory limit in MBs", "3500");
 		add_option<bool> (
@@ -40,6 +43,7 @@ public:
         return plugins::make_shared_from_arg_tuples<sat_search::RintanenSATSearch>(
 			opts.get<int>("max_parallel_calls"),
 			opts.get<int>("scheduler_interval"),
+			opts.get<double>("gamma"),
 			opts.get<bool>("schedule_formula_as_one"),
 			opts.get<int>("memory_limit_mb"),
 			opts.get<shared_ptr<sat_search::LengthStrategy>>("length_strategy"),

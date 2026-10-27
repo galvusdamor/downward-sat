@@ -57,6 +57,9 @@ std::map<void*, std::shared_ptr<SAT_Call_Data>> sat_solver_to_data;
 struct SAT_Scheduler{
 	const size_t maximum_number_of_parallel_calls;
 	std::chrono::milliseconds schedule_interval;
+	// turn length of the open call at position p (0 = shortest length) is
+	// schedule_interval * gamma^p; gamma = 1 is plain round-robin (as in fd-fts-sat)
+	const double gamma;
 	const bool dont_schedule_formula_generation;
 	const int memory_limit_mbs;
 
@@ -76,10 +79,11 @@ struct SAT_Scheduler{
 	int reserved_memory_in_mb;
 	
 
-	SAT_Scheduler(size_t max_parallel_calls, int scheduler_interval_seconds,
+	SAT_Scheduler(size_t max_parallel_calls, int scheduler_interval_seconds, double _gamma,
 			bool _dont_schedule_formula_generation, int _memory_limit_mbs) :
 		maximum_number_of_parallel_calls(max_parallel_calls),
 		schedule_interval(scheduler_interval_seconds * 1000),
+		gamma(_gamma),
 		dont_schedule_formula_generation(_dont_schedule_formula_generation),
 		memory_limit_mbs(_memory_limit_mbs),
 		nextStepNumber(0), previousLength(-1), done_mutex(0), shutdown_handshake(0), plannerTerminated(false), planFound(false) {
@@ -109,6 +113,16 @@ struct SAT_Scheduler{
 	}
 
 
+	std::chrono::milliseconds turn_length(int step_number) const {
+		if (gamma == 1.0) return schedule_interval;
+		int position = 0;
+		for (const auto &[nr, instance] : currentInstances) {
+			if (nr == step_number) break;
+			position++;
+		}
+		return std::chrono::milliseconds(std::max<long>(1, std::lround(schedule_interval.count() * std::pow(gamma, position))));
+	}
+
 	// this function gets called from within a length tread
 	// return value: if forcePauseForMemory = 1, returns true of thread should continue despite being low in memory, false if thread should suspend
 	//               if forcePauseForMemory = 0, returns true if thread needs to be terminated, false if thread should continue
@@ -118,18 +132,18 @@ struct SAT_Scheduler{
 		}
 		
 
+		// the call that is currently active
+		std::shared_ptr<SAT_Call_Data> current_call = sat_solver_to_data[solver];
+		const int current_call_step = current_call->iterationNr;
+
 		// check whether my time has elapsed; but ignore if thread has finished or wants to be paused for memory
 		if (! finished && !forcePauseForMemory){
 			auto t_now = std::chrono::system_clock::now();
 			std::chrono::milliseconds elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(t_now - t_last_schedule);
 		
 			// my time has not elapsed yet.
-			if (elapsed < schedule_interval) return plannerTerminated;
+			if (elapsed < turn_length(current_call_step)) return plannerTerminated;
 		}
-
-		// the call that is currently active
-		std::shared_ptr<SAT_Call_Data> current_call = sat_solver_to_data[solver];
-		const int current_call_step = current_call->iterationNr;
 
 		//cout << "Hi Scheduler! I " << solver << " am " << (finished?"":"not ") << "finished." <<
 		//	(finished? (foundPlans?" I found a plan." : " I did not find a plan.") : "") << 
@@ -271,6 +285,7 @@ namespace sat_search {
 RintanenSATSearch::RintanenSATSearch(
 		int _max_parallel_calls,
 		int _scheduler_interval_seconds,
+		double _gamma,
 		bool _dont_schedule_formula_generation,
 		int _memory_limit_mbs,
 		std::shared_ptr<LengthStrategy> _length_strategy, std::shared_ptr<SATEncodingFactory> _encoding_factory,
@@ -281,6 +296,7 @@ RintanenSATSearch::RintanenSATSearch(
 
 	max_parallel_calls(_max_parallel_calls),
 	scheduler_interval_seconds(_scheduler_interval_seconds),
+	gamma(_gamma),
 	dont_schedule_formula_generation(_dont_schedule_formula_generation),
 	memory_limit_mbs(_memory_limit_mbs){
 
@@ -546,7 +562,7 @@ SearchStatus RintanenSATSearch::step() {
     utils::Timer step_timer;
 	cout << "Starting Rintanen's algorithms C with SAT solver " << ipasir_signature() << endl;
 
-	std::shared_ptr<SAT_Scheduler> global_scheduler = make_shared<SAT_Scheduler>(max_parallel_calls,scheduler_interval_seconds, dont_schedule_formula_generation, memory_limit_mbs);
+	std::shared_ptr<SAT_Scheduler> global_scheduler = make_shared<SAT_Scheduler>(max_parallel_calls,scheduler_interval_seconds, gamma, dont_schedule_formula_generation, memory_limit_mbs);
 
 	// create the first length run of the SAT planner and start it!
 	// it will wait immediately as the mutex starts in locked state
