@@ -286,7 +286,7 @@ void add_base_encoding_options_to_feature(plugins::Feature &feature, const strin
 		"encode any additional mutex that is found",
 		"true");
 	feature.add_option<bool>(
-		"forceAtLeastOneAction",
+		"force_at_least_one_action",
 		"force at least one action per timestep",
 		"true");
 }
@@ -299,6 +299,6 @@ get_base_encoding_arguments_from_options(const plugins::Options &opts){
 		opts.get<bool>("stop_after_ordering"),
 		opts.get<bool>("fdr_mutexes"),
 		opts.get<bool>("additional_mutexes"),
-		opts.get<bool>("forceAtLeastOneAction"));
+		opts.get<bool>("force_at_least_one_action"));
 }
 }
