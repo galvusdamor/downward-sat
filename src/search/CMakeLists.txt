@@ -657,6 +657,7 @@ create_fast_downward_library(
 		sat/base_encoding
 		sat/kautz_selman_rintanen
 		sat/relaxed_relaxed_exists_step
+		sat/exists_step_sigma
 		sat/ordering/action_ordering
 		sat/ordering/disabling_graph_ordering
 		sat/ordering/file_ordering
@@ -675,6 +676,7 @@ create_fast_downward_library(
     SOURCES
 		sat/plugin_kautzselmanrintanen
 		sat/plugin_relaxed_relaxed_exists_step
+		sat/plugin_exists_step_sigma
 		sat/plugin_sat_encoding
 		sat/ordering/plugin_orderings
 		search_algorithms/plugin_sat

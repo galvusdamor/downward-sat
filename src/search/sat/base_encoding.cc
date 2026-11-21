@@ -128,13 +128,13 @@ void BaseEncoding::generate_fact_variables(int time){
 }
 
 void BaseEncoding::mutex_encoding_for_timestep(int time){
-	// State Mutexes based on FDR variables
-	if (base_factory->encode_fdr_mutexes){
-		for (size_t var = 0; var < task_proxy.get_variables().size(); var++){
-			if (base_factory->statically_true_derived_predicates.count(var)) continue;
-			sat->atMostOne(fact_variables[time][var]);
+	// State mutexes based on FDR variables. At-most-one is always needed: the encodings rely on it to make the old
+	// value of a variable false when an effect sets a new one (and in the initial state). At-least-one is optional.
+	for (size_t var = 0; var < task_proxy.get_variables().size(); var++){
+		if (base_factory->statically_true_derived_predicates.count(var)) continue;
+		sat->atMostOne(fact_variables[time][var]);
+		if (base_factory->encode_fdr_mutexes)
 			sat->atLeastOne(fact_variables[time][var]);
-		}
 	}
 
 	// additional mutexes from the input
@@ -279,7 +279,7 @@ void add_base_encoding_options_to_feature(plugins::Feature &feature, const strin
 		"false");
 	feature.add_option<bool>(
 		"fdr_mutexes",
-		"encode mutexes based on fdr variables",
+		"encode at-least-one constraints for the values of each fdr variable (at-most-one is always encoded)",
 		"true");
 	feature.add_option<bool>(
 		"additional_mutexes",
