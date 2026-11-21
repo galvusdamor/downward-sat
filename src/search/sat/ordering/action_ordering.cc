@@ -62,25 +62,42 @@ vector<int> read_ordering_from_file(const string &filename, int number_of_operat
 		} catch (const exception &){
 			parsed = 0;
 		}
+		// 1-based position of the current entry, for error messages
+		size_t position = order.size() + 1;
 		if (parsed != token.size()){
-			cerr << "Error: action ordering file " << filename << " contains invalid token '" << token << "'" << endl;
+			cerr << "Error: entry " << position << " of action ordering file " << filename << " is '" << token
+				<< "', which is not an operator ID (expected an integer between 0 and " << number_of_operators - 1 << ")." << endl;
 			utils::exit_with(utils::ExitCode::SEARCH_INPUT_ERROR);
 		}
 		if (op < 0 || op >= number_of_operators){
-			cerr << "Error: action ordering file " << filename << " contains operator ID " << op
-				<< ", but the task has only " << number_of_operators << " operators" << endl;
+			cerr << "Error: entry " << position << " of action ordering file " << filename << " is " << op
+				<< ", which is not a valid operator ID. The task has " << number_of_operators
+				<< " operators, so IDs must be between 0 and " << number_of_operators - 1 << "." << endl;
 			utils::exit_with(utils::ExitCode::SEARCH_INPUT_ERROR);
 		}
 		if (seen[op]){
-			cerr << "Error: action ordering file " << filename << " contains operator ID " << op << " twice" << endl;
+			cerr << "Error: operator ID " << op << " appears more than once in action ordering file " << filename
+				<< " (again at entry " << position << "). Each operator must be listed exactly once." << endl;
 			utils::exit_with(utils::ExitCode::SEARCH_INPUT_ERROR);
 		}
 		seen[op] = true;
 		order.push_back(op);
 	}
 	if (static_cast<int>(order.size()) != number_of_operators){
-		cerr << "Error: action ordering file " << filename << " contains " << order.size()
-			<< " operator IDs, but the task has " << number_of_operators << " operators" << endl;
+		// all entries are distinct and valid, so some operators are missing
+		cerr << "Error: action ordering file " << filename << " lists " << order.size() << " of the task's "
+			<< number_of_operators << " operators. Each operator must be listed exactly once. Missing operator IDs:";
+		const int max_reported = 10;
+		int reported = 0;
+		for (int op = 0; op < number_of_operators && reported < max_reported; op++){
+			if (seen[op]) continue;
+			cerr << " " << op;
+			reported++;
+		}
+		int missing = number_of_operators - static_cast<int>(order.size());
+		if (missing > max_reported)
+			cerr << " ... (" << missing << " in total)";
+		cerr << endl;
 		utils::exit_with(utils::ExitCode::SEARCH_INPUT_ERROR);
 	}
 	return order;

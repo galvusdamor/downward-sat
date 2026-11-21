@@ -7,3 +7,8 @@ __pycache__/
 /misc/autodoc/downward-xmlrpc.secret
 
 .vscode/*
+
+# local experiment files
+/Apptainer.txt
+/formula.cnf
+*.sas
