@@ -35,7 +35,7 @@ Current work (branch `r2e`): Relaxed Relaxed ∃-step (R²∃) encoding and acti
 ```
 - Options shared by `ksr(...)` and `r2e(...)` (`add_base_encoding_options_to_feature`): `ordering` (default
   `disabling()` for ksr, `tsort()` for r2e), `write_ordering="file"`, `stop_after_ordering`, `fdr_mutexes`,
-  `additional_mutexes`, `forceAtLeastOneAction`. `r2e` additionally has `prune_opponents` (default true).
+  `additional_mutexes`, `force_at_least_one_action`. `r2e` additionally has `prune_opponents` (default true).
 - Orderings (plugin category `ActionOrdering`): `disabling(threshold=5000000, join_groups_above_threshold=true)`,
   `tsort()`, `input()`, `random(random_seed=-1)`, `from_file(filename="...")`; all take `inverted=true|false`.
   The former `ksr` options `disabling_threshold`/`join_groups_above_threshold` now live on `disabling()`.
